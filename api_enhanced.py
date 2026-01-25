@@ -321,8 +321,3 @@ try:
     app.mount("/static", StaticFiles(directory="/app/static"), name="static")
 except RuntimeError:
     pass  # Directory might not exist yet
-
-if __name__ == "__main__":
-   import os
-port = int(os.environ.get("PORT", 8000))
-uvicorn.run(app, host="0.0.0.0", port=port)
