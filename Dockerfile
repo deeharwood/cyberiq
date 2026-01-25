@@ -32,4 +32,4 @@ RUN mkdir -p /app/chroma_db
 EXPOSE 8000
 
 # Run the enhanced web server
-CMD ["uvicorn", "api_enhanced:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD python -m uvicorn api_enhanced:app --host 0.0.0.0 --port ${PORT:-8000}
