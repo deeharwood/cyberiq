@@ -72,13 +72,18 @@ async def startup_event():
         print(f"❌ Error loading KEV data: {str(e)}")
         kev_data = []
     
-    # Load recent CVE data with enrichment
+    # Load recent CVE data with enrichment (OPTIONAL - skipped to avoid NVD rate limits)
+    # The KEVs already contain the most critical vulnerabilities
     try:
-        print("🔒 Loading recent CVE data with CVSS, CWE, NVD, and CISA ADP enrichment...")
-        cve_data = load_recent_cves(days=90)
-        print(f"✅ Loaded {len(cve_data)} enriched CVEs")
+        print("ℹ️  Skipping recent CVE loading to avoid NVD API rate limits")
+        print("ℹ️  KEVs contain the most critical exploited vulnerabilities")
+        cve_data = []
+        # Uncomment below to enable CVE loading (requires NVD API key):
+        # print("🔒 Loading recent CVE data with CVSS, CWE, NVD, and CISA ADP enrichment...")
+        # cve_data = load_recent_cves(days=90)
+        # print(f"✅ Loaded {len(cve_data)} enriched CVEs")
     except Exception as e:
-        print(f"❌ Error loading CVE data: {str(e)}")
+        print(f"⚠️  CVE loading skipped: {str(e)}")
         cve_data = []
     
     total_items = len(mitre_data) + len(kev_data) + len(cve_data)
