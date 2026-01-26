@@ -1,32 +1,21 @@
 """
-Enhanced FastAPI Server - Multi-Source Cybersecurity Assistant
-Integrates MITRE ATT&CK, CVE, and CISA KEV data
+CyberIQ API - Enhanced with CVSS, CWE, NVD, and CISA ADP
+Compatible with function-based vulnerability loaders
 """
 
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from typing import Optional
-import os
-import sys
-
-# Import loaders and vector store
-sys.path.append('/app')
-from mitre_rag import MITREDataLoader
-from vulnerability_loaders import CVEDataLoader, CISAKEVLoader
-from enhanced_vector_store import EnhancedVectorStore
+from typing import Optional, List, Dict
 import anthropic
+import os
 
-# Initialize FastAPI
-app = FastAPI(
-    title="Enhanced MITRE ATT&CK & CVE SOC Assistant",
-    description="AI-powered cybersecurity assistant with MITRE ATT&CK, CVE, and CISA KEV integration",
-    version="2.0.0"
-)
+# Import the functions from vulnerability_loaders
+from vulnerability_loaders import load_kev_data, load_recent_cves
 
-# CORS
+app = FastAPI(title="CyberIQ API")
+
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -35,289 +24,280 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global variables
-vector_store = None
-anthropic_client = None
-is_initialized = False
-stats = {}
+# Global data storage
+mitre_data = []
+kev_data = []
+cve_data = []
 
-# Request/Response models
-class ChatRequest(BaseModel):
+# Initialize Anthropic client
+anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
+if not anthropic_api_key:
+    raise ValueError("ANTHROPIC_API_KEY environment variable not set")
+
+client = anthropic.Anthropic(api_key=anthropic_api_key)
+
+
+class QueryRequest(BaseModel):
     query: str
-    filter_type: Optional[str] = None  # 'mitre', 'cve', 'kev', or None for all
-    
-class ChatResponse(BaseModel):
+
+
+class QueryResponse(BaseModel):
     response: str
-    sources: list = []
-    stats: dict = {}
+    sources: Optional[List[Dict]] = []
 
-class HealthResponse(BaseModel):
-    status: str
-    data_loaded: dict
-    
-class RefreshRequest(BaseModel):
-    source: str  # 'cve' or 'kev' or 'all'
-    days: Optional[int] = 30  # For CVE: how many days back
 
-# Startup: Initialize all data sources
 @app.on_event("startup")
 async def startup_event():
-    """Initialize MITRE, CVE, and KEV data on startup"""
-    global vector_store, anthropic_client, is_initialized, stats
+    """Load all data on startup"""
+    global mitre_data, kev_data, cve_data
     
-    print("🚀 Initializing Enhanced Cybersecurity Assistant...")
+    print("🚀 Starting CyberIQ API...")
     
+    # Load MITRE ATT&CK data
     try:
-        # Check API key
-        api_key = os.getenv('ANTHROPIC_API_KEY')
-        if not api_key:
-            raise ValueError("ANTHROPIC_API_KEY not set")
-        
-        anthropic_client = anthropic.Anthropic(api_key=api_key)
-        
-        # Initialize vector store
-        print("🧠 Initializing unified vector database...")
-        vector_store = EnhancedVectorStore()
-        
-        # Load MITRE ATT&CK
-        print("\n📚 Loading MITRE ATT&CK Framework...")
-        mitre_loader = MITREDataLoader()
-        mitre_data = mitre_loader.download_attack_data()
-        mitre_techniques = mitre_loader.parse_techniques(mitre_data)
-        vector_store.add_items(mitre_techniques, 'mitre')
-        
-        # Load recent CVEs
-        print("\n🔒 Loading Recent CVEs...")
-        cve_loader = CVEDataLoader()
-        cve_data = cve_loader.download_recent_cves(days=90)
-        cves = cve_loader.parse_cves(cve_data)
-        vector_store.add_items(cves, 'cve')
-        
-        # Load CISA KEV
-        print("\n⚠️  Loading CISA Known Exploited Vulnerabilities...")
-        kev_loader = CISAKEVLoader()
-        kev_data = kev_loader.download_kev_catalog()
-        kevs = kev_loader.parse_kevs(kev_data)
-        vector_store.add_items(kevs, 'kev')
-        
-        # Get stats
-        stats = vector_store.get_stats()
-        print(f"\n✅ System ready!")
-        print(f"   - MITRE Techniques: {stats['mitre_techniques']}")
-        print(f"   - CVEs: {stats['cves']}")
-        print(f"   - KEVs: {stats['kevs']}")
-        print(f"   - Total items: {stats['total']}")
-        
-        is_initialized = True
-        
+        print("📥 Loading MITRE ATT&CK data...")
+        from mitre_loaders import load_attack_data
+        mitre_data = load_attack_data()
+        print(f"✅ Loaded {len(mitre_data)} MITRE ATT&CK techniques")
     except Exception as e:
-        print(f"❌ Startup error: {e}")
-        import traceback
-        traceback.print_exc()
-        is_initialized = False
-
-# Health check
-@app.get("/health", response_model=HealthResponse)
-async def health_check():
-    """Check system status and data loaded"""
-    if not is_initialized:
-        raise HTTPException(status_code=503, detail="System not initialized")
+        print(f"⚠️  Error loading MITRE data: {str(e)}")
+        mitre_data = []
     
-    return HealthResponse(
-        status="healthy",
-        data_loaded=stats
-    )
-
-# Enhanced chat endpoint
-@app.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-    """
-    Enhanced chat with multi-source knowledge
-    Searches across MITRE, CVE, and KEV data
-    """
-    if not is_initialized:
-        raise HTTPException(status_code=503, detail="System not initialized")
-    
-    if not request.query or len(request.query.strip()) == 0:
-        raise HTTPException(status_code=400, detail="Query cannot be empty")
-    
+    # Load CISA KEV data with enrichment
     try:
-        # Search vector database
-        results = vector_store.search(
-            request.query, 
-            n_results=10,
-            filter_type=request.filter_type
-        )
+        print("⚠️  Loading CISA KEV data with CVSS, CWE, NVD, and CISA ADP enrichment...")
+        kev_data = load_kev_data()
+        print(f"✅ Loaded {len(kev_data)} enriched KEVs")
+    except Exception as e:
+        print(f"❌ Error loading KEV data: {str(e)}")
+        kev_data = []
+    
+    # Load recent CVE data with enrichment
+    try:
+        print("🔒 Loading recent CVE data with CVSS, CWE, NVD, and CISA ADP enrichment...")
+        cve_data = load_recent_cves(days=90)
+        print(f"✅ Loaded {len(cve_data)} enriched CVEs")
+    except Exception as e:
+        print(f"❌ Error loading CVE data: {str(e)}")
+        cve_data = []
+    
+    total_items = len(mitre_data) + len(kev_data) + len(cve_data)
+    print(f"🎉 CyberIQ ready with {total_items} threat intelligence items!")
+
+
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    return {
+        "status": "online",
+        "service": "CyberIQ Threat Intelligence Platform",
+        "data_loaded": {
+            "mitre_techniques": len(mitre_data),
+            "cisa_kevs": len(kev_data),
+            "recent_cves": len(cve_data),
+            "total": len(mitre_data) + len(kev_data) + len(cve_data)
+        },
+        "features": [
+            "CVSS Scoring",
+            "CWE Classifications", 
+            "NVD Links",
+            "CISA ADP Government Analysis",
+            "AI-Powered Analysis"
+        ]
+    }
+
+
+@app.post("/query", response_model=QueryResponse)
+async def query(request: QueryRequest):
+    """
+    Process a natural language query against threat intelligence data
+    Returns AI-powered analysis with CVSS, CWE, NVD, and CISA ADP context
+    """
+    try:
+        # Prepare context for Claude
+        context = f"""You are CyberIQ, a unified threat intelligence assistant with access to comprehensive security data.
+
+Available Data:
+- {len(mitre_data)} MITRE ATT&CK techniques
+- {len(kev_data)} CISA Known Exploited Vulnerabilities (enriched with CVSS, CWE, CISA ADP)
+- {len(cve_data)} Recent CVEs (enriched with CVSS, CWE, CISA ADP)
+
+Data Enrichment Features:
+- CVSS Scores: Industry-standard severity ratings (v3.1, v3.0, v2.0)
+- CWE Classifications: Common weakness types (SQL Injection, XSS, Buffer Overflow, etc.)
+- NVD Links: Direct research links to National Vulnerability Database
+- CISA ADP: Government analysis including exploitation status, ransomware flags, compliance deadlines
+
+When discussing vulnerabilities, always mention:
+1. CVSS score and severity (if available)
+2. CWE classification (if available)
+3. CISA exploitation status (if KEV)
+4. Ransomware campaign usage (if known)
+5. Required actions and due dates (if CISA mandated)
+
+User Query: {request.query}
+
+Provide a comprehensive, accurate response based on the available data."""
+
+        # Search relevant data
+        relevant_items = search_data(request.query)
         
-        # Build context from results
-        context = build_context(results)
+        if relevant_items:
+            context += "\n\nRelevant Intelligence:\n"
+            for item in relevant_items[:10]:  # Limit to top 10
+                context += f"\n{format_item_for_context(item)}"
         
-        # Build prompt for Claude
-        system_prompt = """You are an expert cybersecurity analyst and SOC (Security Operations Center) assistant.
-You have access to:
-- MITRE ATT&CK framework (attack techniques and tactics)
-- CVE database (Common Vulnerabilities and Exposures)
-- CISA KEV (Known Exploited Vulnerabilities - actively exploited in the wild)
-
-When answering:
-- Cite specific technique IDs (T1234), CVE IDs (CVE-2024-1234), or mention if from CISA KEV
-- For vulnerabilities, mention CVSS scores and severity when available
-- PRIORITIZE KEV items - these are actively being exploited
-- Provide practical, actionable information for SOC analysts
-- Be concise but thorough"""
-
-        user_prompt = f"""Context from cybersecurity databases:
-{context}
-
-User Question: {request.query}
-
-Please answer based on the context provided above. Cite specific IDs where relevant."""
-
-        # Call Claude API
-        message = anthropic_client.messages.create(
+        # Call Claude for analysis
+        message = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=1500,
-            system=system_prompt,
+            max_tokens=2000,
             messages=[
-                {"role": "user", "content": user_prompt}
+                {"role": "user", "content": context}
             ]
         )
         
         response_text = message.content[0].text
         
-        # Extract source IDs from results
-        source_info = []
-        for result in results:
-            source = {
-                'id': result['id'],
-                'type': result['source_type'],
-            }
-            
-            if result['source_type'] == 'mitre':
-                source['name'] = result.get('name', '')
-            elif result['source_type'] == 'cve':
-                source['severity'] = result.get('cvss_severity', '')
-                source['score'] = result.get('cvss_score', '')
-            elif result['source_type'] == 'kev':
-                source['vendor'] = result.get('vendor', '')
-                source['product'] = result.get('product', '')
-                source['actively_exploited'] = True
-            
-            source_info.append(source)
-        
-        return ChatResponse(
+        return QueryResponse(
             response=response_text,
-            sources=source_info[:5],  # Top 5 sources
-            stats=stats
+            sources=relevant_items[:5]  # Return top 5 sources
         )
-        
-    except Exception as e:
-        print(f"Error processing query: {e}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-
-def build_context(results: list) -> str:
-    """Build context string from search results"""
-    if not results:
-        return "No relevant information found."
     
-    context_parts = []
-    
-    for i, result in enumerate(results, 1):
-        source_type = result['source_type'].upper()
-        
-        if result['source_type'] == 'mitre':
-            context_parts.append(
-                f"{i}. [MITRE ATT&CK] {result['name']} ({result['id']})\n"
-                f"   Tactics: {result.get('tactics', 'N/A')}\n"
-                f"   Description: {result['description']}\n"
-                f"   URL: {result.get('url', '')}"
-            )
-        elif result['source_type'] == 'cve':
-            severity = result.get('cvss_severity', 'UNKNOWN')
-            score = result.get('cvss_score', 'N/A')
-            context_parts.append(
-                f"{i}. [CVE] {result['id']} - Severity: {severity} (Score: {score})\n"
-                f"   Published: {result.get('published', 'N/A')}\n"
-                f"   Description: {result['description']}"
-            )
-        elif result['source_type'] == 'kev':
-            context_parts.append(
-                f"{i}. [⚠️ CISA KEV - ACTIVELY EXPLOITED] {result['id']}\n"
-                f"   Vendor: {result.get('vendor', 'N/A')}\n"
-                f"   Product: {result.get('product', 'N/A')}\n"
-                f"   Added to KEV: {result.get('date_added', 'N/A')}\n"
-                f"   Description: {result['description']}"
-            )
-    
-    return "\n\n".join(context_parts)
-
-# Search endpoint
-@app.get("/search")
-async def search(query: str, limit: int = 10, filter_type: str = None):
-    """Direct search without AI generation"""
-    if not is_initialized:
-        raise HTTPException(status_code=503, detail="System not initialized")
-    
-    try:
-        results = vector_store.search(query, n_results=limit, filter_type=filter_type)
-        return {"results": results, "count": len(results)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Refresh data endpoint
-@app.post("/admin/refresh")
-async def refresh_data(request: RefreshRequest, background_tasks: BackgroundTasks):
-    """Refresh CVE or KEV data (admin endpoint)"""
-    if not is_initialized:
-        raise HTTPException(status_code=503, detail="System not initialized")
-    
-    # Run refresh in background
-    background_tasks.add_task(perform_refresh, request.source, request.days)
-    
-    return {"status": "refresh_started", "source": request.source}
 
-async def perform_refresh(source: str, days: int):
-    """Background task to refresh data"""
-    global stats
+def search_data(query: str) -> List[Dict]:
+    """
+    Search through all data sources for relevant items
+    Returns combined results from MITRE, KEV, and CVE data
+    """
+    results = []
+    query_lower = query.lower()
     
-    try:
-        if source in ['cve', 'all']:
-            print(f"🔄 Refreshing CVE data (last {days} days)...")
-            cve_loader = CVEDataLoader()
-            cve_data = cve_loader.download_recent_cves(days=days)
-            cves = cve_loader.parse_cves(cve_data)
-            vector_store.add_items(cves, 'cve')
-        
-        if source in ['kev', 'all']:
-            print("🔄 Refreshing CISA KEV data...")
-            kev_loader = CISAKEVLoader()
-            kev_data = kev_loader.download_kev_catalog()
-            kevs = kev_loader.parse_kevs(kev_data)
-            vector_store.add_items(kevs, 'kev')
-        
-        # Update stats
-        stats = vector_store.get_stats()
-        print("✅ Refresh complete")
-        
-    except Exception as e:
-        print(f"❌ Refresh error: {e}")
-
-# Serve frontend
-@app.get("/", response_class=HTMLResponse)
-async def root():
-    """Serve the main HTML page"""
-    html_file = "/app/static/index.html"
+    # Search MITRE ATT&CK
+    for item in mitre_data:
+        if matches_query(item, query_lower):
+            results.append({
+                "type": "mitre",
+                "data": item
+            })
     
-    if os.path.exists(html_file):
-        with open(html_file, 'r') as f:
-            return HTMLResponse(content=f.read())
-    else:
-        return HTMLResponse(content="<h1>Enhanced MITRE ATT&CK + CVE + KEV Assistant</h1><p>Frontend not found. API docs at /docs</p>")
+    # Search KEVs (with enrichment)
+    for item in kev_data:
+        if matches_query(item, query_lower):
+            results.append({
+                "type": "kev",
+                "data": item
+            })
+    
+    # Search CVEs (with enrichment)
+    for item in cve_data:
+        if matches_query(item, query_lower):
+            results.append({
+                "type": "cve",
+                "data": item
+            })
+    
+    return results
 
-# Mount static files
-try:
-    app.mount("/static", StaticFiles(directory="/app/static"), name="static")
-except RuntimeError:
-    pass  # Directory might not exist yet
+
+def matches_query(item: Dict, query: str) -> bool:
+    """Check if item matches query string"""
+    # Convert item to searchable text
+    item_text = str(item).lower()
+    
+    # Simple keyword matching
+    keywords = query.split()
+    return any(keyword in item_text for keyword in keywords if len(keyword) > 2)
+
+
+def format_item_for_context(item: Dict) -> str:
+    """Format item for Claude context"""
+    item_type = item.get("type", "unknown")
+    data = item.get("data", {})
+    
+    if item_type == "mitre":
+        return f"MITRE {data.get('technique_id', 'N/A')}: {data.get('technique_name', 'N/A')} - {data.get('description', 'N/A')[:200]}"
+    
+    elif item_type == "kev":
+        cve_id = data.get('cve_id', 'N/A')
+        cvss = data.get('cvss_score', 0)
+        cvss_severity = data.get('cvss_severity', 'UNKNOWN')
+        cwe = data.get('cwe_id', '')
+        cwe_desc = data.get('cwe_description', '')
+        cisa_exploited = data.get('cisa_known_exploited', False)
+        ransomware = data.get('cisa_ransomware', False)
+        
+        result = f"KEV {cve_id}: {data.get('vulnerability_name', 'N/A')}"
+        
+        if cvss > 0:
+            result += f" [CVSS: {cvss} {cvss_severity}]"
+        
+        if cwe:
+            result += f" [CWE-{cwe}: {cwe_desc}]"
+        
+        if cisa_exploited:
+            result += " [CISA: KNOWN EXPLOITED]"
+        
+        if ransomware:
+            result += " [RANSOMWARE]"
+        
+        result += f" - {data.get('short_description', 'N/A')[:150]}"
+        
+        return result
+    
+    elif item_type == "cve":
+        cve_id = data.get('cve_id', 'N/A')
+        cvss = data.get('cvss_score', 0)
+        cvss_severity = data.get('cvss_severity', 'UNKNOWN')
+        cwe = data.get('cwe_id', '')
+        cwe_desc = data.get('cwe_description', '')
+        
+        result = f"CVE {cve_id}"
+        
+        if cvss > 0:
+            result += f" [CVSS: {cvss} {cvss_severity}]"
+        
+        if cwe:
+            result += f" [CWE-{cwe}: {cwe_desc}]"
+        
+        result += f" - {data.get('description', 'N/A')[:150]}"
+        
+        return result
+    
+    return str(data)[:200]
+
+
+@app.get("/stats")
+async def stats():
+    """Get statistics about loaded data"""
+    kev_with_cvss = sum(1 for k in kev_data if k.get('cvss_score', 0) > 0)
+    kev_with_cwe = sum(1 for k in kev_data if k.get('cwe_id', ''))
+    kev_ransomware = sum(1 for k in kev_data if k.get('cisa_ransomware', False))
+    
+    return {
+        "mitre": {
+            "total": len(mitre_data),
+            "tactics": len(set(item.get('tactic', '') for item in mitre_data if item.get('tactic')))
+        },
+        "kev": {
+            "total": len(kev_data),
+            "with_cvss": kev_with_cvss,
+            "with_cwe": kev_with_cwe,
+            "ransomware_campaigns": kev_ransomware
+        },
+        "cve": {
+            "total": len(cve_data),
+            "recent_days": 90
+        },
+        "enrichment": {
+            "cvss_coverage": f"{(kev_with_cvss / len(kev_data) * 100):.1f}%" if kev_data else "0%",
+            "cwe_coverage": f"{(kev_with_cwe / len(kev_data) * 100):.1f}%" if kev_data else "0%"
+        }
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080)
