@@ -88,6 +88,48 @@
             line-height: 1.6;
         }
 
+        .message.assistant .message-content {
+            max-width: 90%;
+        }
+
+        .message-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            font-size: 0.9rem;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .message-content th {
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: 600;
+            border: 1px solid #ddd;
+        }
+
+        .message-content td {
+            padding: 10px 8px;
+            border: 1px solid #ddd;
+        }
+
+        .message-content tr:hover td {
+            background: #f3f4f6 !important;
+        }
+
+        .message-content strong {
+            color: #1e3a8a;
+        }
+
+        .message-content ul, .message-content ol {
+            margin-left: 20px;
+            margin-top: 10px;
+        }
+
+        .message-content p {
+            margin: 10px 0;
+        }
+
         .message.user .message-content {
             background: linear-gradient(135deg, #1e3a8a, #7c3aed);
             color: white;
@@ -254,9 +296,9 @@
                 <p>Ask me anything about threat intelligence, vulnerabilities, or attack techniques.</p>
                 <div class="examples">
                     <strong>Try these:</strong><br>
-                    <span class="example-query" onclick="askQuestion('What are the most recent KEVs?')">What are the most recent KEVs?</span>
-                    <span class="example-query" onclick="askQuestion('What are common phishing techniques?')">What are common phishing techniques?</span>
-                    <span class="example-query" onclick="askQuestion('Which KEVs are used in ransomware?')">Which KEVs are used in ransomware?</span>
+                    <span class="example-query" onclick="askQuestion('Show me top 5 KEVs with highest CVSS scores')">Top 5 KEVs by CVSS</span>
+                    <span class="example-query" onclick="askQuestion('What are common phishing techniques?')">Phishing techniques</span>
+                    <span class="example-query" onclick="askQuestion('Which KEVs are used in ransomware?')">Ransomware KEVs</span>
                 </div>
             </div>
         </div>
@@ -337,6 +379,15 @@
             }
         }
 
+        function formatResponse(text) {
+            // Convert plain text line breaks to HTML
+            // But preserve existing HTML (like tables)
+            if (text.includes('<table>')) {
+                return text; // Already has HTML
+            }
+            return text.replace(/\n/g, '<br>');
+        }
+
         function addMessage(text, sender, isError = false) {
             const chatArea = document.getElementById('chatArea');
             
@@ -354,7 +405,7 @@
             if (isError) {
                 contentDiv.classList.add('error');
             }
-            contentDiv.textContent = text;
+            contentDiv.innerHTML = formatResponse(text);
             
             messageDiv.appendChild(contentDiv);
             chatArea.appendChild(messageDiv);
