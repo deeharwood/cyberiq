@@ -144,7 +144,11 @@ Use this exact HTML structure with inline styles:
 </thead>
 <tbody>
 <tr style="background: #f9fafb;">
-<td style="padding: 12px; border: 1px solid #ddd; font-weight: 600; color: #1e3a8a;">CVE-XXXX-XXXXX</td>
+<td style="padding: 12px; border: 1px solid #ddd;">
+<a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">
+CVE-XXXX-XXXXX ↗
+</a>
+</td>
 <td style="padding: 12px; border: 1px solid #ddd;">Vulnerability name here</td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700; color: #dc2626;">9.8</td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;"><span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">CRITICAL</span></td>
@@ -152,7 +156,11 @@ Use this exact HTML structure with inline styles:
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">Yes/No</td>
 </tr>
 <tr style="background: white;">
-<td style="padding: 12px; border: 1px solid #ddd; font-weight: 600; color: #1e3a8a;">CVE-YYYY-YYYYY</td>
+<td style="padding: 12px; border: 1px solid #ddd;">
+<a href="https://nvd.nist.gov/vuln/detail/CVE-YYYY-YYYYY" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">
+CVE-YYYY-YYYYY ↗
+</a>
+</td>
 <td style="padding: 12px; border: 1px solid #ddd;">Another vulnerability</td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700; color: #ea580c;">8.5</td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;"><span style="background: #ea580c; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">HIGH</span></td>
@@ -161,6 +169,17 @@ Use this exact HTML structure with inline styles:
 </tr>
 </tbody>
 </table>
+
+IMPORTANT CVE LINK FORMAT:
+For each CVE ID, create a clickable link that opens NVD in a new tab:
+<a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">
+CVE-XXXX-XXXXX ↗
+</a>
+
+Replace CVE-XXXX-XXXXX with the actual CVE ID (e.g., CVE-2025-52691).
+Always include the ↗ symbol after the CVE ID to indicate external link.
+Use target="_blank" to open in new tab.
+Use rel="noopener noreferrer" for security.
 
 SEVERITY BADGE COLORS (use exact values):
 - CRITICAL: <span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">CRITICAL</span>
