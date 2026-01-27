@@ -127,14 +127,26 @@ async def query(request: QueryRequest):
 
 User Query: {request.query}
 
-CRITICAL FORMATTING RULES:
-1. When presenting multiple items, START with the HTML table immediately (max 2 sentences before table)
-2. Put detailed analysis AFTER the table, not before
-3. Be concise - avoid long preambles
+!!CRITICAL!! SHOW THE HTML TABLE FIRST - NO PREAMBLE, NO INTRODUCTION, NO EXPLANATION BEFORE THE TABLE.
 
-HTML TABLE FORMAT:
+Start your response IMMEDIATELY with <table>. Analysis comes AFTER.
 
-<table style="width:100%; border-collapse: collapse; margin: 20px 0;">
+CORRECT FORMAT:
+<table style="width:100%; border-collapse: collapse; margin: 5px 0 15px 0;">
+[table rows here]
+</table>
+
+Analysis text here.
+
+WRONG FORMAT (DO NOT DO THIS):
+Here are the results...
+Based on analysis...
+Let me explain...
+<table>
+
+HTML TABLE STRUCTURE:
+
+<table style="width:100%; border-collapse: collapse; margin: 5px 0 15px 0;">
 <thead>
 <tr style="background: linear-gradient(135deg, #1e3a8a, #7c3aed); color: white;">
 <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">CVE ID</th>
@@ -148,11 +160,9 @@ HTML TABLE FORMAT:
 <tbody>
 <tr style="background: #f9fafb;">
 <td style="padding: 12px; border: 1px solid #ddd;">
-<a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">
-CVE-XXXX-XXXXX ↗
-</a>
+<a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">CVE-XXXX-XXXXX ↗</a>
 </td>
-<td style="padding: 12px; border: 1px solid #ddd;">Vulnerability name here</td>
+<td style="padding: 12px; border: 1px solid #ddd;">Vulnerability name</td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700; color: #dc2626;">9.8</td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;"><span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">CRITICAL</span></td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">2026-01-26</td>
@@ -160,9 +170,7 @@ CVE-XXXX-XXXXX ↗
 </tr>
 <tr style="background: white;">
 <td style="padding: 12px; border: 1px solid #ddd;">
-<a href="https://nvd.nist.gov/vuln/detail/CVE-YYYY-YYYYY" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">
-CVE-YYYY-YYYYY ↗
-</a>
+<a href="https://nvd.nist.gov/vuln/detail/CVE-YYYY-YYYYY" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">CVE-YYYY-YYYYY ↗</a>
 </td>
 <td style="padding: 12px; border: 1px solid #ddd;">Another vulnerability</td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700; color: #ea580c;">8.5</td>
@@ -173,35 +181,19 @@ CVE-YYYY-YYYYY ↗
 </tbody>
 </table>
 
-RESPONSE STRUCTURE (IMPORTANT):
-Brief intro (1-2 sentences max) → HTML table → Brief analysis after table
-
-Example Good Response:
-"Here are the top 3 KEVs by CVSS score:
-
-<table>...</table>
-
-<strong>Key Findings:</strong> CVE-2025-52691 poses the highest risk with a perfect 10.0 CVSS score."
-
-Example Bad Response (DO NOT DO THIS):
-"Based on my analysis of the data provided, I need to clarify something important about the available information. The KEV catalog contains comprehensive threat intelligence..." [20 lines of text before table]
-
-CVE LINK FORMAT:
-<a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">CVE-XXXX-XXXXX ↗</a>
+CVE LINKS: <a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">CVE-XXXX-XXXXX ↗</a>
 
 SEVERITY BADGES:
-- CRITICAL: <span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">CRITICAL</span>
-- HIGH: <span style="background: #ea580c; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">HIGH</span>
-- MEDIUM: <span style="background: #f59e0b; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">MEDIUM</span>
-- LOW: <span style="background: #84cc16; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">LOW</span>
+CRITICAL: <span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">CRITICAL</span>
+HIGH: <span style="background: #ea580c; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">HIGH</span>
+MEDIUM: <span style="background: #f59e0b; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">MEDIUM</span>
+LOW: <span style="background: #84cc16; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">LOW</span>
 
-CVSS SCORE COLORS:
-- 9.0-10.0: color: #dc2626;
-- 7.0-8.9: color: #ea580c;
-- 4.0-6.9: color: #f59e0b;
-- Below 4.0: color: #84cc16;
+CVSS COLORS: 9.0-10.0=#dc2626, 7.0-8.9=#ea580c, 4.0-6.9=#f59e0b, <4.0=#84cc16
 
-Alternate row backgrounds: #f9fafb and white
+Row backgrounds alternate: #f9fafb and white
+
+After table: Brief key findings (2-3 sentences max).
 
 """
         
