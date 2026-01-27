@@ -1,6 +1,5 @@
 """
-CyberIQ API - Enhanced with CVSS, CWE, NVD, and CISA ADP
-Compatible with function-based vulnerability loaders
+CyberIQ API - Enhanced with better KEV search
 """
 
 from fastapi import FastAPI, HTTPException
@@ -64,30 +63,19 @@ async def startup_event():
         print(f"⚠️  Error loading MITRE data: {str(e)}")
         mitre_data = []
     
-    # Load CISA KEV data with enrichment
+    # Load CISA KEV data
     try:
-        print("⚠️  Loading CISA KEV data with CVSS, CWE, NVD, and CISA ADP enrichment...")
+        print("⚠️  Loading CISA KEV data...")
         kev_data = load_kev_data()
-        print(f"✅ Loaded {len(kev_data)} enriched KEVs")
+        print(f"✅ Loaded {len(kev_data)} KEVs")
     except Exception as e:
         print(f"❌ Error loading KEV data: {str(e)}")
         kev_data = []
     
-    # Load recent CVE data with enrichment (OPTIONAL - skipped to avoid NVD rate limits)
-    # The KEVs already contain the most critical vulnerabilities
-    try:
-        print("ℹ️  Skipping recent CVE loading to avoid NVD API rate limits")
-        print("ℹ️  KEVs contain the most critical exploited vulnerabilities")
-        cve_data = []
-        # Uncomment below to enable CVE loading (requires NVD API key):
-        # print("🔒 Loading recent CVE data with CVSS, CWE, NVD, and CISA ADP enrichment...")
-        # cve_data = load_recent_cves(days=90)
-        # print(f"✅ Loaded {len(cve_data)} enriched CVEs")
-    except Exception as e:
-        print(f"⚠️  CVE loading skipped: {str(e)}")
-        cve_data = []
+    # Skip CVE loading
+    cve_data = []
     
-    total_items = len(mitre_data) + len(kev_data) + len(cve_data)
+    total_items = len(mitre_data) + len(kev_data)
     print(f"🎉 CyberIQ ready with {total_items} threat intelligence items!")
 
 
@@ -98,220 +86,118 @@ async def root():
         with open("index.html", "r") as f:
             return f.read()
     except FileNotFoundError:
-        return "<h1>CyberIQ</h1><p>Chat interface not found. Please ensure index.html exists.</p>"
+        return "<h1>CyberIQ</h1><p>Chat interface not found.</p>"
 
 
 @app.get("/api/status")
 async def status():
-    """API health check endpoint"""
+    """API health check"""
     return {
         "status": "online",
         "service": "CyberIQ Threat Intelligence Platform",
         "data_loaded": {
             "mitre_techniques": len(mitre_data),
             "cisa_kevs": len(kev_data),
-            "recent_cves": len(cve_data),
-            "total": len(mitre_data) + len(kev_data) + len(cve_data)
-        },
-        "features": [
-            "CVSS Scoring",
-            "CWE Classifications", 
-            "NVD Links",
-            "CISA ADP Government Analysis",
-            "AI-Powered Analysis"
-        ]
+            "total": len(mitre_data) + len(kev_data)
+        }
     }
 
 
 @app.post("/query", response_model=QueryResponse)
 async def query(request: QueryRequest):
-    """
-    Process a natural language query against threat intelligence data
-    Returns AI-powered analysis with CVSS, CWE, NVD, and CISA ADP context
-    """
+    """Process queries with improved KEV search"""
     try:
-        # Prepare context for Claude
-        context = f"""You are CyberIQ, a unified threat intelligence assistant with access to comprehensive security data.
-
-Available Data:
+        query_lower = request.query.lower()
+        
+        # Build context
+        context = f"""You are CyberIQ with access to:
 - {len(mitre_data)} MITRE ATT&CK techniques
-- {len(kev_data)} CISA Known Exploited Vulnerabilities (enriched with CVSS, CWE, CISA ADP)
-- {len(cve_data)} Recent CVEs (enriched with CVSS, CWE, CISA ADP)
-
-Data Enrichment Features:
-- CVSS Scores: Industry-standard severity ratings (v3.1, v3.0, v2.0)
-- CWE Classifications: Common weakness types (SQL Injection, XSS, Buffer Overflow, etc.)
-- NVD Links: Direct research links to National Vulnerability Database
-- CISA ADP: Government analysis including exploitation status, ransomware flags, compliance deadlines
-
-When discussing vulnerabilities, always mention:
-1. CVSS score and severity (if available)
-2. CWE classification (if available)
-3. CISA exploitation status (if KEV)
-4. Ransomware campaign usage (if known)
-5. Required actions and due dates (if CISA mandated)
+- {len(kev_data)} CISA Known Exploited Vulnerabilities
 
 User Query: {request.query}
 
-Provide a comprehensive, accurate response based on the available data."""
-
-        # Search relevant data
-        relevant_items = search_data(request.query)
+"""
+        
+        # Smart search
+        relevant_items = search_data_smart(request.query)
         
         if relevant_items:
-            context += "\n\nRelevant Intelligence:\n"
-            for item in relevant_items[:10]:  # Limit to top 10
-                context += f"\n{format_item_for_context(item)}"
+            context += "Relevant Intelligence:\n\n"
+            for item in relevant_items[:15]:
+                context += format_item_detailed(item) + "\n\n"
         
-        # Call Claude for analysis
+        # Call Claude
         message = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=2000,
-            messages=[
-                {"role": "user", "content": context}
-            ]
+            messages=[{"role": "user", "content": context}]
         )
         
-        response_text = message.content[0].text
-        
         return QueryResponse(
-            response=response_text,
-            sources=relevant_items[:5]  # Return top 5 sources
+            response=message.content[0].text,
+            sources=relevant_items[:5]
         )
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def search_data(query: str) -> List[Dict]:
-    """
-    Search through all data sources for relevant items
-    Returns combined results from MITRE, KEV, and CVE data
-    """
+def search_data_smart(query: str) -> List[Dict]:
+    """Smart search with KEV prioritization"""
     results = []
-    query_lower = query.lower()
+    q = query.lower()
     
-    # Search MITRE ATT&CK
-    for item in mitre_data:
-        if matches_query(item, query_lower):
-            results.append({
-                "type": "mitre",
-                "data": item
-            })
+    # Detect intent
+    wants_recent = any(w in q for w in ['recent', 'latest', 'new', 'top'])
+    wants_critical = any(w in q for w in ['critical', 'high', 'severe'])
+    wants_ransomware = 'ransomware' in q
+    wants_kev = any(w in q for w in ['kev', 'exploited', 'vulnerability', 'cve'])
+    wants_mitre = any(w in q for w in ['technique', 'tactic', 'mitre', 'attack', 'phishing'])
     
-    # Search KEVs (with enrichment)
-    for item in kev_data:
-        if matches_query(item, query_lower):
-            results.append({
-                "type": "kev",
-                "data": item
-            })
+    # KEV queries
+    if wants_kev or wants_recent or not wants_mitre:
+        kevs = sorted(kev_data, key=lambda x: x.get('date_added', ''), reverse=True)
+        
+        if wants_ransomware:
+            kevs = [k for k in kevs if k.get('cisa_ransomware') or k.get('known_ransomware') == 'Known']
+        
+        for kev in kevs[:20]:
+            results.append({"type": "kev", "data": kev})
     
-    # Search CVEs (with enrichment)
-    for item in cve_data:
-        if matches_query(item, query_lower):
-            results.append({
-                "type": "cve",
-                "data": item
-            })
+    # MITRE queries
+    if wants_mitre or (not wants_kev and not wants_recent):
+        for item in mitre_data[:20]:
+            if any(word in str(item).lower() for word in q.split() if len(word) > 3):
+                results.append({"type": "mitre", "data": item})
+                if len(results) >= 30:
+                    break
+    
+    # Default: recent KEVs
+    if not results:
+        recent = sorted(kev_data, key=lambda x: x.get('date_added', ''), reverse=True)[:15]
+        results = [{"type": "kev", "data": k} for k in recent]
     
     return results
 
 
-def matches_query(item: Dict, query: str) -> bool:
-    """Check if item matches query string"""
-    # Convert item to searchable text
-    item_text = str(item).lower()
-    
-    # Simple keyword matching
-    keywords = query.split()
-    return any(keyword in item_text for keyword in keywords if len(keyword) > 2)
-
-
-def format_item_for_context(item: Dict) -> str:
-    """Format item for Claude context"""
-    item_type = item.get("type", "unknown")
+def format_item_detailed(item: Dict) -> str:
+    """Detailed formatting"""
+    itype = item.get("type")
     data = item.get("data", {})
     
-    if item_type == "mitre":
-        return f"MITRE {data.get('technique_id', 'N/A')}: {data.get('technique_name', 'N/A')} - {data.get('description', 'N/A')[:200]}"
+    if itype == "kev":
+        return f"""KEV {data.get('cve_id', 'N/A')}: {data.get('vulnerability_name', 'N/A')}
+Vendor/Product: {data.get('vendor_project', 'N/A')} {data.get('product', 'N/A')}
+Date Added: {data.get('date_added', 'N/A')}
+CVSS: {data.get('cvss_score', 'Pending')} ({data.get('cvss_severity', 'HIGH')})
+Ransomware: {'Yes' if (data.get('cisa_ransomware') or data.get('known_ransomware') == 'Known') else 'No'}
+Required Action: {data.get('required_action', 'N/A')}
+Description: {data.get('short_description', 'N/A')[:200]}"""
     
-    elif item_type == "kev":
-        cve_id = data.get('cve_id', 'N/A')
-        cvss = data.get('cvss_score', 0)
-        cvss_severity = data.get('cvss_severity', 'UNKNOWN')
-        cwe = data.get('cwe_id', '')
-        cwe_desc = data.get('cwe_description', '')
-        cisa_exploited = data.get('cisa_known_exploited', False)
-        ransomware = data.get('cisa_ransomware', False)
-        
-        result = f"KEV {cve_id}: {data.get('vulnerability_name', 'N/A')}"
-        
-        if cvss > 0:
-            result += f" [CVSS: {cvss} {cvss_severity}]"
-        
-        if cwe:
-            result += f" [CWE-{cwe}: {cwe_desc}]"
-        
-        if cisa_exploited:
-            result += " [CISA: KNOWN EXPLOITED]"
-        
-        if ransomware:
-            result += " [RANSOMWARE]"
-        
-        result += f" - {data.get('short_description', 'N/A')[:150]}"
-        
-        return result
-    
-    elif item_type == "cve":
-        cve_id = data.get('cve_id', 'N/A')
-        cvss = data.get('cvss_score', 0)
-        cvss_severity = data.get('cvss_severity', 'UNKNOWN')
-        cwe = data.get('cwe_id', '')
-        cwe_desc = data.get('cwe_description', '')
-        
-        result = f"CVE {cve_id}"
-        
-        if cvss > 0:
-            result += f" [CVSS: {cvss} {cvss_severity}]"
-        
-        if cwe:
-            result += f" [CWE-{cwe}: {cwe_desc}]"
-        
-        result += f" - {data.get('description', 'N/A')[:150]}"
-        
-        return result
+    elif itype == "mitre":
+        return f"MITRE {data.get('technique_id', 'N/A')}: {data.get('technique_name', 'N/A')}\n{data.get('description', 'N/A')[:200]}"
     
     return str(data)[:200]
-
-
-@app.get("/stats")
-async def stats():
-    """Get statistics about loaded data"""
-    kev_with_cvss = sum(1 for k in kev_data if k.get('cvss_score', 0) > 0)
-    kev_with_cwe = sum(1 for k in kev_data if k.get('cwe_id', ''))
-    kev_ransomware = sum(1 for k in kev_data if k.get('cisa_ransomware', False))
-    
-    return {
-        "mitre": {
-            "total": len(mitre_data),
-            "tactics": len(set(item.get('tactic', '') for item in mitre_data if item.get('tactic')))
-        },
-        "kev": {
-            "total": len(kev_data),
-            "with_cvss": kev_with_cvss,
-            "with_cwe": kev_with_cwe,
-            "ransomware_campaigns": kev_ransomware
-        },
-        "cve": {
-            "total": len(cve_data),
-            "recent_days": 90
-        },
-        "enrichment": {
-            "cvss_coverage": f"{(kev_with_cvss / len(kev_data) * 100):.1f}%" if kev_data else "0%",
-            "cwe_coverage": f"{(kev_with_cwe / len(kev_data) * 100):.1f}%" if kev_data else "0%"
-        }
-    }
 
 
 if __name__ == "__main__":
