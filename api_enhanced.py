@@ -127,9 +127,12 @@ async def query(request: QueryRequest):
 
 User Query: {request.query}
 
-CRITICAL FORMATTING INSTRUCTION: When presenting multiple items, format as a styled HTML table for maximum readability.
+CRITICAL FORMATTING RULES:
+1. When presenting multiple items, START with the HTML table immediately (max 2 sentences before table)
+2. Put detailed analysis AFTER the table, not before
+3. Be concise - avoid long preambles
 
-Use this exact HTML structure with inline styles:
+HTML TABLE FORMAT:
 
 <table style="width:100%; border-collapse: collapse; margin: 20px 0;">
 <thead>
@@ -153,7 +156,7 @@ CVE-XXXX-XXXXX ↗
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700; color: #dc2626;">9.8</td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;"><span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">CRITICAL</span></td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">2026-01-26</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center;">Yes/No</td>
+<td style="padding: 12px; border: 1px solid #ddd; text-align: center;">Yes</td>
 </tr>
 <tr style="background: white;">
 <td style="padding: 12px; border: 1px solid #ddd;">
@@ -170,33 +173,35 @@ CVE-YYYY-YYYYY ↗
 </tbody>
 </table>
 
-IMPORTANT CVE LINK FORMAT:
-For each CVE ID, create a clickable link that opens NVD in a new tab:
-<a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">
-CVE-XXXX-XXXXX ↗
-</a>
+RESPONSE STRUCTURE (IMPORTANT):
+Brief intro (1-2 sentences max) → HTML table → Brief analysis after table
 
-Replace CVE-XXXX-XXXXX with the actual CVE ID (e.g., CVE-2025-52691).
-Always include the ↗ symbol after the CVE ID to indicate external link.
-Use target="_blank" to open in new tab.
-Use rel="noopener noreferrer" for security.
+Example Good Response:
+"Here are the top 3 KEVs by CVSS score:
 
-SEVERITY BADGE COLORS (use exact values):
+<table>...</table>
+
+<strong>Key Findings:</strong> CVE-2025-52691 poses the highest risk with a perfect 10.0 CVSS score."
+
+Example Bad Response (DO NOT DO THIS):
+"Based on my analysis of the data provided, I need to clarify something important about the available information. The KEV catalog contains comprehensive threat intelligence..." [20 lines of text before table]
+
+CVE LINK FORMAT:
+<a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">CVE-XXXX-XXXXX ↗</a>
+
+SEVERITY BADGES:
 - CRITICAL: <span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">CRITICAL</span>
 - HIGH: <span style="background: #ea580c; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">HIGH</span>
 - MEDIUM: <span style="background: #f59e0b; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">MEDIUM</span>
 - LOW: <span style="background: #84cc16; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">LOW</span>
 
 CVSS SCORE COLORS:
-- 9.0-10.0: color: #dc2626; (red)
-- 7.0-8.9: color: #ea580c; (orange)
-- 4.0-6.9: color: #f59e0b; (yellow)
-- Below 4.0: color: #84cc16; (green)
+- 9.0-10.0: color: #dc2626;
+- 7.0-8.9: color: #ea580c;
+- 4.0-6.9: color: #f59e0b;
+- Below 4.0: color: #84cc16;
 
-ALTERNATE row backgrounds: #f9fafb and white
-
-After the table, provide brief analysis with key findings.
-Do NOT use markdown formatting. Use HTML only.
+Alternate row backgrounds: #f9fafb and white
 
 """
         
