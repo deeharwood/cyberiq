@@ -5,6 +5,7 @@ Compatible with function-based vulnerability loaders
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict
 import anthropic
@@ -90,9 +91,19 @@ async def startup_event():
     print(f"🎉 CyberIQ ready with {total_items} threat intelligence items!")
 
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 async def root():
-    """Health check endpoint"""
+    """Serve the chat interface"""
+    try:
+        with open("index.html", "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "<h1>CyberIQ</h1><p>Chat interface not found. Please ensure index.html exists.</p>"
+
+
+@app.get("/api/status")
+async def status():
+    """API health check endpoint"""
     return {
         "status": "online",
         "service": "CyberIQ Threat Intelligence Platform",
