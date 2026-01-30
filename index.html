@@ -158,9 +158,10 @@
             border-radius: 8px;
             overflow-x: auto;
             margin: 15px 0;
-            font-family: 'Consolas', 'Monaco', monospace;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
             font-size: 0.9em;
             line-height: 1.5;
+            border-left: 4px solid #7c3aed;
         }
 
         .message-content code {
@@ -168,7 +169,7 @@
             color: #1e3a8a;
             padding: 2px 6px;
             border-radius: 3px;
-            font-family: 'Consolas', 'Monaco', monospace;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
             font-size: 0.9em;
         }
 
@@ -176,6 +177,18 @@
             background: transparent;
             color: #d4d4d4;
             padding: 0;
+        }
+        
+        .message-content strong {
+            color: #1e3a8a;
+            font-weight: 600;
+        }
+        
+        /* Highlight different query languages */
+        .message-content h4 {
+            color: #7c3aed;
+            margin: 20px 0 10px 0;
+            font-size: 1.1em;
         }
 
         .message.user .message-content {
@@ -334,7 +347,7 @@
             <div class="stats">
                 <div class="stat">691 MITRE Techniques</div>
                 <div class="stat">1,499 CISA KEVs</div>
-                <div class="stat">2,190 Total Items</div>
+                <div class="stat">Azure • Splunk • Elastic</div>
             </div>
         </div>
 
@@ -344,9 +357,9 @@
                 <p>Ask me anything about threat intelligence, vulnerabilities, or attack techniques.</p>
                 <div class="examples">
                     <strong>Try these:</strong><br>
-                    <span class="example-query" onclick="askQuestion('Show me top 5 KEVs with highest CVSS scores')">Top 5 KEVs by CVSS</span>
-                    <span class="example-query" onclick="askQuestion('Show me KEVs from December 2025 with KQL query')">December KEVs + KQL</span>
-                    <span class="example-query" onclick="askQuestion('Which KEVs are used in ransomware?')">Ransomware KEVs</span>
+                    <span class="example-query" onclick="askQuestion('Show me top 5 critical KEVs with detection queries')">Top 5 KEVs + All SIEMs</span>
+                    <span class="example-query" onclick="askQuestion('Show me ransomware KEVs with Splunk and Elasticsearch queries')">Ransomware + SPL/EQL</span>
+                    <span class="example-query" onclick="askQuestion('December 2025 KEVs with hunting queries')">December KEVs + Queries</span>
                 </div>
             </div>
         </div>
