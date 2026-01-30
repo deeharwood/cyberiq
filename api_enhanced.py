@@ -104,6 +104,48 @@ async def status():
     }
 
 
+def clean_response_spacing(response_text: str) -> str:
+    """
+    Remove excessive text before HTML tables to minimize spacing
+    """
+    import re
+    
+    # First, compress multiple newlines into maximum 2 newlines
+    response_text = re.sub(r'\n{3,}', '\n\n', response_text)
+    
+    # Check if response contains a table
+    if '<table' not in response_text.lower():
+        return response_text
+    
+    # Find the position of the first <table> tag
+    table_match = re.search(r'<table[^>]*>', response_text, re.IGNORECASE)
+    if not table_match:
+        return response_text
+    
+    table_start = table_match.start()
+    
+    # Get everything before the table
+    before_table = response_text[:table_start].strip()
+    
+    # Get the table and everything after
+    table_and_after = response_text[table_start:]
+    
+    # If there's content before table, limit it severely
+    if before_table:
+        # Split into sentences
+        sentences = re.split(r'[.!?]+', before_table)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        # Keep only first sentence if it's short (under 80 chars)
+        if sentences and len(sentences[0]) < 80:
+            before_table = sentences[0] + '.\n\n'
+        else:
+            # Otherwise, completely remove preamble - table first!
+            before_table = ''
+    
+    return before_table + table_and_after
+
+
 @app.post("/query", response_model=QueryResponse)
 async def query(request: QueryRequest):
     """Process queries with on-demand CVSS enrichment and table formatting"""
@@ -132,7 +174,7 @@ User Query: {request.query}
 Start your response IMMEDIATELY with <table>. Analysis comes AFTER.
 
 CORRECT FORMAT:
-<table style="width:100%; border-collapse: collapse; margin: 5px 0 15px 0;">
+<table style="width:100%; border-collapse: collapse; margin: 0 0 15px 0;">
 [table rows here]
 </table>
 
@@ -146,7 +188,7 @@ Let me explain...
 
 HTML TABLE STRUCTURE:
 
-<table style="width:100%; border-collapse: collapse; margin: 5px 0 15px 0;">
+<table style="width:100%; border-collapse: collapse; margin: 0 0 15px 0;">
 <thead>
 <tr style="background: linear-gradient(135deg, #1e3a8a, #7c3aed); color: white;">
 <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">CVE ID</th>
@@ -226,8 +268,11 @@ After table: Brief key findings (2-3 sentences max).
             messages=[{"role": "user", "content": context}]
         )
         
+        # Post-process response to remove excessive spacing before table
+        response_text = clean_response_spacing(message.content[0].text)
+        
         return QueryResponse(
-            response=message.content[0].text,
+            response=response_text,
             sources=relevant_items[:5]
         )
     
