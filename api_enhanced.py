@@ -170,6 +170,23 @@ async def query(request: QueryRequest):
 
 User Query: {request.query}
 
+IMPORTANT: If the user asks for KEVs from a specific time period (e.g., "December 2025", "2025", "last month"), 
+the system has already filtered the results to only show KEVs from that period. If no results are shown, 
+state clearly that no KEVs match the criteria for that time period.
+
+KQL SUPPORT: If the user asks for KQL, Kusto queries, or Sentinel queries, provide a KQL query example 
+after the table that searches for indicators related to the vulnerabilities shown. Use Azure Sentinel table 
+names like SecurityAlert, SecurityEvent, CommonSecurityLog, etc.
+
+When providing KQL queries, format them in a code block like this:
+<pre><code>
+SecurityAlert
+| where TimeGenerated >= datetime(2025-12-01)
+| where Severity in ("High", "Critical")
+| where CVE has_any ("CVE-2025-52691", "CVE-2018-14634")
+| project TimeGenerated, AlertName, CVE, Severity, Entities
+</code></pre>
+
 !!CRITICAL!! SHOW THE HTML TABLE FIRST - NO PREAMBLE, NO INTRODUCTION, NO EXPLANATION BEFORE THE TABLE.
 
 Start your response IMMEDIATELY with <table>. Analysis comes AFTER.
@@ -243,6 +260,12 @@ After table: Brief key findings (2-3 sentences max).
         # Smart search with CVSS enrichment if needed
         relevant_items = search_data_smart(request.query)
         
+        # Check if date filtering was applied (look for empty results with date keywords)
+        has_date_ref = any(word in query_lower for word in ['december', 'november', 'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', '2024', '2025', '2026'])
+        
+        if not relevant_items and has_date_ref:
+            context += f"\n\nNo KEVs found matching the specified time period in the query."
+        
         # If user wants CVSS and we have KEVs, enrich them
         if wants_cvss and relevant_items and relevant_items[0].get('type') == 'kev':
             print(f"🔍 Enriching top {num_items} KEVs with CVSS scores...")
@@ -282,7 +305,10 @@ After table: Brief key findings (2-3 sentences max).
 
 
 def search_data_smart(query: str) -> List[Dict]:
-    """Smart search with KEV prioritization"""
+    """Smart search with KEV prioritization and date filtering"""
+    import re
+    from datetime import datetime
+    
     results = []
     q = query.lower()
     
@@ -293,11 +319,68 @@ def search_data_smart(query: str) -> List[Dict]:
     wants_ransomware = 'ransomware' in q
     wants_kev = any(w in q for w in ['kev', 'exploited', 'vulnerability', 'cve', 'cross'])
     wants_mitre = any(w in q for w in ['technique', 'tactic', 'mitre', 'attack', 'phishing'])
+    wants_kql = any(w in q for w in ['kql', 'kusto', 'sentinel', 'azure', 'query language'])
+    
+    # Parse date filters from query
+    date_filter_start = None
+    date_filter_end = None
+    
+    # Check for specific month/year patterns
+    month_map = {
+        'january': 1, 'february': 2, 'march': 3, 'april': 4,
+        'may': 5, 'june': 6, 'july': 7, 'august': 8,
+        'september': 9, 'october': 10, 'november': 11, 'december': 12,
+        'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'jun': 6,
+        'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+    }
+    
+    # Look for "Month YYYY" pattern (e.g., "December 2025")
+    for month_name, month_num in month_map.items():
+        month_year_pattern = f"{month_name}\\s+(\\d{{4}})"
+        match = re.search(month_year_pattern, q, re.IGNORECASE)
+        if match:
+            year = int(match.group(1))
+            # Filter for entire month
+            date_filter_start = f"{year}-{month_num:02d}-01"
+            
+            # Calculate last day of month properly
+            if month_num in [1, 3, 5, 7, 8, 10, 12]:  # 31 days
+                last_day = 31
+            elif month_num in [4, 6, 9, 11]:  # 30 days
+                last_day = 30
+            else:  # February
+                last_day = 29  # Covering leap years
+            
+            date_filter_end = f"{year}-{month_num:02d}-{last_day}"
+            
+            print(f"📅 Date filter detected: {month_name.title()} {year}")
+            print(f"   Start: {date_filter_start}, End: {date_filter_end}")
+            break
+    
+    # Look for just year pattern (e.g., "2025")
+    if not date_filter_start:
+        year_match = re.search(r'\b(20\d{2})\b', q)
+        if year_match:
+            year = int(year_match.group(1))
+            date_filter_start = f"{year}-01-01"
+            date_filter_end = f"{year}-12-31"
+            print(f"📅 Year filter detected: {year}")
     
     # KEV queries (most common)
     if wants_kev or wants_recent or wants_top or wants_highest or not wants_mitre:
         kevs = sorted(kev_data, key=lambda x: x.get('date_added', ''), reverse=True)
         
+        # Apply date filter if detected
+        if date_filter_start and date_filter_end:
+            filtered_kevs = []
+            for k in kevs:
+                date_added = k.get('date_added', '')
+                if date_added and date_filter_start <= date_added <= date_filter_end:
+                    filtered_kevs.append(k)
+            print(f"   Filtered from {len(kevs)} to {len(filtered_kevs)} KEVs")
+            kevs = filtered_kevs
+        
+        # Apply ransomware filter
         if wants_ransomware:
             kevs = [k for k in kevs if k.get('cisa_ransomware') or k.get('known_ransomware') == 'Known']
         
