@@ -106,7 +106,7 @@ async def status():
 
 def clean_response_spacing(response_text: str) -> str:
     """
-    Remove excessive text before HTML tables to minimize spacing
+    Remove excessive text and spacing before HTML tables
     """
     import re
     
@@ -132,12 +132,15 @@ def clean_response_spacing(response_text: str) -> str:
     
     # If there's content before table, limit it severely
     if before_table:
+        # Remove all excessive whitespace and newlines
+        before_table = re.sub(r'\s+', ' ', before_table).strip()
+        
         # Split into sentences
         sentences = re.split(r'[.!?]+', before_table)
         sentences = [s.strip() for s in sentences if s.strip()]
         
-        # Keep only first sentence if it's short (under 80 chars)
-        if sentences and len(sentences[0]) < 80:
+        # Keep only first sentence if it's short (under 60 chars)
+        if sentences and len(sentences[0]) < 60:
             before_table = sentences[0] + '.\n\n'
         else:
             # Otherwise, completely remove preamble - table first!
