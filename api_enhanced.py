@@ -157,6 +157,29 @@ async def query(request: QueryRequest):
         wants_cvss = any(w in query_lower for w in ['cvss', 'score', 'severity', 'highest', 'critical', 'top'])
         wants_top_n = any(w in query_lower for w in ['top', 'highest'])
         
+        # Detect which specific SIEMs user wants
+        wants_kql = any(w in query_lower for w in ['kql', 'kusto', 'sentinel', 'azure', 'microsoft defender'])
+        wants_spl = any(w in query_lower for w in ['spl', 'splunk'])
+        wants_eql = any(w in query_lower for w in ['eql', 'elasticsearch', 'elastic'])
+        wants_any_siem = any(w in query_lower for w in ['query', 'queries', 'detection', 'hunt', 'hunting', 'siem'])
+        
+        # Determine which SIEMs to include
+        if wants_kql or wants_spl or wants_eql:
+            # User specified specific SIEM(s)
+            include_kql = wants_kql
+            include_spl = wants_spl
+            include_eql = wants_eql
+        elif wants_any_siem:
+            # User asked for queries but didn't specify which - give all 3
+            include_kql = True
+            include_spl = True
+            include_eql = True
+        else:
+            # No query request - don't generate any
+            include_kql = False
+            include_spl = False
+            include_eql = False
+        
         # Extract number if asking for "top N"
         import re
         top_n_match = re.search(r'top\s+(\d+)', query_lower)
@@ -170,43 +193,42 @@ async def query(request: QueryRequest):
 
 User Query: {request.query}
 
+SIEM QUERY GENERATION INSTRUCTIONS:
+Based on the user's query, generate queries for ONLY these SIEMs:
+- Azure Sentinel (KQL): {'YES - Include this' if include_kql else 'NO - Skip this'}
+- Splunk (SPL): {'YES - Include this' if include_spl else 'NO - Skip this'}
+- Elasticsearch (EQL): {'YES - Include this' if include_eql else 'NO - Skip this'}
+
+CRITICAL: Only generate queries for SIEMs marked as "YES - Include this" above.
+If all are marked "NO", do not include any queries at all.
+
 IMPORTANT: If the user asks for KEVs from a specific time period (e.g., "December 2025", "2025", "last month"), 
 the system has already filtered the results to only show KEVs from that period. If no results are shown, 
 state clearly that no KEVs match the criteria for that time period.
 
-MULTI-SIEM QUERY SUPPORT: 
-When the user asks for detection queries, threat hunting queries, or SIEM queries, provide queries for ALL THREE major SIEMs:
 
-1. **Azure Sentinel (KQL)** - Kusto Query Language
-2. **Splunk (SPL)** - Search Processing Language  
-3. **Elasticsearch (EQL)** - Event Query Language
-
-Format each query in its own code block with a clear header:
+QUERY FORMAT:
+Each query should be in its own code block with a clear header like:
 
 **Azure Sentinel (KQL):**
 <pre><code>
 SecurityAlert
 | where TimeGenerated >= ago(7d)
-| where CVE has_any ("CVE-2026-1281", "CVE-2026-24858")
-| where Severity in ("High", "Critical")
-| project TimeGenerated, AlertName, CVE, Severity, Entities
+| where CVE has_any ("CVE-2026-1281")
+| project TimeGenerated, AlertName, CVE, Severity
 </code></pre>
 
 **Splunk (SPL):**
 <pre><code>
 index=security sourcetype=alert earliest=-7d
-| search (CVE="CVE-2026-1281" OR CVE="CVE-2026-24858")
-| search (severity="high" OR severity="critical")
-| table _time, alert_name, CVE, severity, affected_host
-| sort -_time
+| search CVE="CVE-2026-1281"
+| table _time, alert_name, CVE, severity
 </code></pre>
 
 **Elasticsearch (EQL):**
 <pre><code>
 sequence by host.name
-[security where event.category == "threat"
- and vulnerability.cve in ("CVE-2026-1281", "CVE-2026-24858")
- and event.severity in ("high", "critical")]
+[security where vulnerability.cve == "CVE-2026-1281"]
 </code></pre>
 
 QUERY LANGUAGE BEST PRACTICES:
@@ -234,6 +256,11 @@ EQL (Elasticsearch):
 !!CRITICAL!! SHOW THE HTML TABLE FIRST - NO PREAMBLE, NO INTRODUCTION, NO EXPLANATION BEFORE THE TABLE.
 
 Start your response IMMEDIATELY with <table>. Analysis comes AFTER.
+
+Response structure:
+1. <table> (immediately)
+2. Brief analysis (2-3 sentences)
+3. Detection queries (conditional - based on what user requested)
 
 CORRECT FORMAT:
 <table style="width:100%; border-collapse: collapse; margin: 0 0 15px 0;">
@@ -332,7 +359,7 @@ After table: Brief key findings (2-3 sentences max).
         # Call Claude
         message = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=2000,
+            max_tokens=4000,  # Increased for 3 full SIEM queries (KQL, SPL, EQL)
             messages=[{"role": "user", "content": context}]
         )
         
