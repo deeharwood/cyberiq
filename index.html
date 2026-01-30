@@ -401,23 +401,35 @@
         }
 
         function formatResponse(text) {
-            // If text contains HTML table, clean it up
-            if (text.includes('<table>')) {
-                // Remove excessive whitespace before table
-                text = text.replace(/\s*(<table[^>]*>)/gi, '$1');
-                
-                // Convert newlines to <br> but not excessively
-                text = text.replace(/\n{3,}/g, '\n\n'); // Max 2 newlines
+            // If text contains HTML table
+            if (text.includes('<table')) {
+                // First convert newlines to <br> for processing
                 text = text.replace(/\n/g, '<br>');
                 
-                // Remove multiple consecutive <br> tags (more than 2)
-                text = text.replace(/(<br>\s*){3,}/gi, '<br><br>');
+                // Create a temporary div to manipulate DOM
+                const temp = document.createElement('div');
+                temp.innerHTML = text;
                 
-                // Remove any <br> tags immediately before table
-                text = text.replace(/(<br>\s*)+(<table[^>]*>)/gi, '$2');
+                // Find the table element
+                const table = temp.querySelector('table');
                 
-                return text;
+                if (table) {
+                    // Remove all <br> elements that come before the table
+                    let node = table.previousSibling;
+                    while (node) {
+                        const prev = node.previousSibling;
+                        // Remove if it's a <br> or empty text node
+                        if (node.nodeName === 'BR' || 
+                            (node.nodeType === 3 && !node.textContent.trim())) {
+                            node.remove();
+                        }
+                        node = prev;
+                    }
+                }
+                
+                return temp.innerHTML;
             }
+            
             // For non-table responses, just convert newlines
             return text.replace(/\n/g, '<br>');
         }
