@@ -401,11 +401,24 @@
         }
 
         function formatResponse(text) {
-            // Convert plain text line breaks to HTML
-            // But preserve existing HTML (like tables)
+            // If text contains HTML table, clean it up
             if (text.includes('<table>')) {
-                return text; // Already has HTML
+                // Remove excessive whitespace before table
+                text = text.replace(/\s*(<table[^>]*>)/gi, '$1');
+                
+                // Convert newlines to <br> but not excessively
+                text = text.replace(/\n{3,}/g, '\n\n'); // Max 2 newlines
+                text = text.replace(/\n/g, '<br>');
+                
+                // Remove multiple consecutive <br> tags (more than 2)
+                text = text.replace(/(<br>\s*){3,}/gi, '<br><br>');
+                
+                // Remove any <br> tags immediately before table
+                text = text.replace(/(<br>\s*)+(<table[^>]*>)/gi, '$2');
+                
+                return text;
             }
+            // For non-table responses, just convert newlines
             return text.replace(/\n/g, '<br>');
         }
 
