@@ -612,7 +612,22 @@
                 document.getElementById('queryTabsContainer').style.display = 'block';
                 
                 // Populate Results tab with the clean content (table + analysis, no queries)
-                document.getElementById('results-content').innerHTML = cleanContent;
+                const resultsDiv = document.getElementById('results-content');
+                resultsDiv.innerHTML = cleanContent;
+                
+                // AGGRESSIVE CLEANUP: Remove ALL leading <br> tags from results
+                while (resultsDiv.firstChild && resultsDiv.firstChild.nodeName === 'BR') {
+                    console.log('Removing leading <br> from Results tab');
+                    resultsDiv.firstChild.remove();
+                }
+                
+                // Remove leading empty text nodes
+                while (resultsDiv.firstChild && 
+                       resultsDiv.firstChild.nodeType === 3 && 
+                       !resultsDiv.firstChild.textContent.trim()) {
+                    console.log('Removing leading empty text node from Results tab');
+                    resultsDiv.firstChild.remove();
+                }
                 
                 // Update each query tab
                 if (queries.kql) {
@@ -749,8 +764,11 @@
                 }
             }
             
-            // Convert newlines to <br>
-            displayText = displayText.replace(/\n/g, '<br>');
+            // DON'T convert newlines to <br> when we have HTML content (tables, etc.)
+            // Only convert for plain text responses
+            if (!displayText.includes('<table') && !displayText.includes('<pre>')) {
+                displayText = displayText.replace(/\n/g, '<br>');
+            }
             
             console.log('Final text length:', displayText.length);
             console.log('First 100 chars:', displayText.substring(0, 100));
