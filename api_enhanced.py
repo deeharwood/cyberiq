@@ -174,18 +174,62 @@ IMPORTANT: If the user asks for KEVs from a specific time period (e.g., "Decembe
 the system has already filtered the results to only show KEVs from that period. If no results are shown, 
 state clearly that no KEVs match the criteria for that time period.
 
-KQL SUPPORT: If the user asks for KQL, Kusto queries, or Sentinel queries, provide a KQL query example 
-after the table that searches for indicators related to the vulnerabilities shown. Use Azure Sentinel table 
-names like SecurityAlert, SecurityEvent, CommonSecurityLog, etc.
+MULTI-SIEM QUERY SUPPORT: 
+When the user asks for detection queries, threat hunting queries, or SIEM queries, provide queries for ALL THREE major SIEMs:
 
-When providing KQL queries, format them in a code block like this:
+1. **Azure Sentinel (KQL)** - Kusto Query Language
+2. **Splunk (SPL)** - Search Processing Language  
+3. **Elasticsearch (EQL)** - Event Query Language
+
+Format each query in its own code block with a clear header:
+
+**Azure Sentinel (KQL):**
 <pre><code>
 SecurityAlert
-| where TimeGenerated >= datetime(2025-12-01)
+| where TimeGenerated >= ago(7d)
+| where CVE has_any ("CVE-2026-1281", "CVE-2026-24858")
 | where Severity in ("High", "Critical")
-| where CVE has_any ("CVE-2025-52691", "CVE-2018-14634")
 | project TimeGenerated, AlertName, CVE, Severity, Entities
 </code></pre>
+
+**Splunk (SPL):**
+<pre><code>
+index=security sourcetype=alert earliest=-7d
+| search (CVE="CVE-2026-1281" OR CVE="CVE-2026-24858")
+| search (severity="high" OR severity="critical")
+| table _time, alert_name, CVE, severity, affected_host
+| sort -_time
+</code></pre>
+
+**Elasticsearch (EQL):**
+<pre><code>
+sequence by host.name
+[security where event.category == "threat"
+ and vulnerability.cve in ("CVE-2026-1281", "CVE-2026-24858")
+ and event.severity in ("high", "critical")]
+</code></pre>
+
+QUERY LANGUAGE BEST PRACTICES:
+
+KQL (Azure Sentinel):
+- Use "|" pipe operators
+- datetime format: datetime(2025-12-01) or ago(7d)
+- Multiple values: has_any(), in()
+- Tables: SecurityAlert, SecurityEvent, CommonSecurityLog, DeviceInfo
+
+SPL (Splunk):
+- Start with index= and sourcetype=
+- Time: earliest=-7d, latest=now
+- Boolean: OR, AND, NOT
+- Commands: search, stats, table, chart, sort, head, tail
+- Use "|" pipe between commands
+
+EQL (Elasticsearch):
+- Focus on event sequences
+- Field format: dot.notation (host.name, user.name, process.name)
+- Arrays: in ("val1", "val2")
+- Event categories: security, network, process, file
+- Common fields: vulnerability.cve, event.severity, event.category
 
 !!CRITICAL!! SHOW THE HTML TABLE FIRST - NO PREAMBLE, NO INTRODUCTION, NO EXPLANATION BEFORE THE TABLE.
 
@@ -319,7 +363,7 @@ def search_data_smart(query: str) -> List[Dict]:
     wants_ransomware = 'ransomware' in q
     wants_kev = any(w in q for w in ['kev', 'exploited', 'vulnerability', 'cve', 'cross'])
     wants_mitre = any(w in q for w in ['technique', 'tactic', 'mitre', 'attack', 'phishing'])
-    wants_kql = any(w in q for w in ['kql', 'kusto', 'sentinel', 'azure', 'query language'])
+    wants_queries = any(w in q for w in ['kql', 'kusto', 'sentinel', 'azure', 'query', 'spl', 'splunk', 'eql', 'elasticsearch', 'elastic', 'detection', 'hunt', 'hunting'])
     
     # Parse date filters from query
     date_filter_start = None
