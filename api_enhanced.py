@@ -13,6 +13,7 @@ import os
 # Import loaders
 from vulnerability_loaders import load_kev_data, load_recent_cves
 from cvss_enricher import enrich_kevs_with_cvss
+from epss_enricher import enrich_kevs_with_epss, get_epss_priority_label, get_epss_color
 
 app = FastAPI(title="CyberIQ API")
 
@@ -157,6 +158,9 @@ async def query(request: QueryRequest):
         wants_cvss = any(w in query_lower for w in ['cvss', 'score', 'severity', 'highest', 'critical', 'top'])
         wants_top_n = any(w in query_lower for w in ['top', 'highest'])
         
+        # Detect if user wants EPSS scores (exploit prediction)
+        wants_epss = any(w in query_lower for w in ['epss', 'exploit prediction', 'exploitation', 'priority', 'prioritize'])
+        
         # Detect which specific SIEMs user wants
         wants_kql = any(w in query_lower for w in ['kql', 'kusto', 'sentinel', 'azure', 'microsoft defender'])
         wants_spl = any(w in query_lower for w in ['spl', 'splunk'])
@@ -283,6 +287,8 @@ HTML TABLE STRUCTURE:
 <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">CVE ID</th>
 <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Vulnerability</th>
 <th style="padding: 12px; text-align: center; border: 1px solid #ddd;">CVSS</th>
+<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">EPSS</th>
+<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Priority</th>
 <th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Severity</th>
 <th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Date Added</th>
 <th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Ransomware</th>
@@ -295,6 +301,8 @@ HTML TABLE STRUCTURE:
 </td>
 <td style="padding: 12px; border: 1px solid #ddd;">Vulnerability name</td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700; color: #dc2626;">9.8</td>
+<td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700;">95.4%</td>
+<td style="padding: 12px; border: 1px solid #ddd; text-align: center;"><span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">🔴 URGENT</span></td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;"><span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">CRITICAL</span></td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">2026-01-26</td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">Yes</td>
@@ -305,12 +313,25 @@ HTML TABLE STRUCTURE:
 </td>
 <td style="padding: 12px; border: 1px solid #ddd;">Another vulnerability</td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700; color: #ea580c;">8.5</td>
+<td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700;">12.3%</td>
+<td style="padding: 12px; border: 1px solid #ddd; text-align: center;"><span style="background: #f59e0b; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">🟡 MEDIUM</span></td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;"><span style="background: #ea580c; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">HIGH</span></td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">2026-01-25</td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">No</td>
 </tr>
 </tbody>
 </table>
+
+EPSS (Exploit Prediction Scoring System):
+- Predicts probability of exploitation in next 30 days
+- Format: XX.X% (e.g., 95.4%, 12.3%, 2.1%)
+- High EPSS = High exploitation likelihood
+
+PRIORITY LABELS (based on EPSS):
+🔴 URGENT (EPSS ≥ 70%): <span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">🔴 URGENT</span>
+🟠 HIGH (EPSS 30-70%): <span style="background: #ea580c; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">🟠 HIGH</span>
+🟡 MEDIUM (EPSS 10-30%): <span style="background: #f59e0b; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">🟡 MEDIUM</span>
+🟢 LOW (EPSS < 10%): <span style="background: #84cc16; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">🟢 LOW</span>
 
 CVE LINKS: <a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">CVE-XXXX-XXXXX ↗</a>
 
@@ -350,6 +371,20 @@ After table: Brief key findings (2-3 sentences max).
                     relevant_items[i]['data'] = enriched
             
             print(f"✅ Enriched {len(enriched_kevs)} KEVs with CVSS scores")
+        
+        # If user wants EPSS and we have KEVs, enrich them
+        if wants_epss and relevant_items and relevant_items[0].get('type') == 'kev':
+            print(f"🔍 Enriching top {num_items} KEVs with EPSS scores...")
+            
+            kevs_to_enrich = [item['data'] for item in relevant_items[:num_items] if item.get('type') == 'kev']
+            enriched_kevs = enrich_kevs_with_epss(kevs_to_enrich, max_items=num_items)
+            
+            # Replace with enriched versions
+            for i, enriched in enumerate(enriched_kevs):
+                if i < len(relevant_items):
+                    relevant_items[i]['data'] = enriched
+            
+            print(f"✅ Enriched {len(enriched_kevs)} KEVs with EPSS scores")
         
         if relevant_items:
             context += "Relevant Intelligence:\n\n"
@@ -484,16 +519,33 @@ def format_item_detailed(item: Dict) -> str:
         cvss = data.get('cvss_score', 0)
         cvss_str = f"{cvss:.1f}" if cvss > 0 else "Pending"
         
-        return f"""KEV {data.get('cve_id', 'N/A')}: {data.get('vulnerability_name', 'N/A')}
+        # Format EPSS if available
+        epss = data.get('epss_score', 0)
+        epss_str = f"{epss*100:.1f}%" if epss > 0 else "N/A"
+        epss_percentile = data.get('epss_percentile', 0)
+        priority_score = data.get('priority_score', 0)
+        
+        base_info = f"""KEV {data.get('cve_id', 'N/A')}: {data.get('vulnerability_name', 'N/A')}
 Vendor/Product: {data.get('vendor_project', 'N/A')} {data.get('product', 'N/A')}
 Date Added: {data.get('date_added', 'N/A')}
 CVSS Score: {cvss_str}
-CVSS Severity: {data.get('cvss_severity', 'HIGH')}
+CVSS Severity: {data.get('cvss_severity', 'HIGH')}"""
+        
+        # Add EPSS info if available
+        if epss > 0:
+            base_info += f"""
+EPSS Score: {epss_str} (Exploitation Probability)
+EPSS Percentile: {epss_percentile*100:.1f}%
+Priority Score: {priority_score:.2f} (CVSS × EPSS)"""
+        
+        base_info += f"""
 CWE: {data.get('cwe_id', 'N/A')}
 Ransomware: {'Yes' if (data.get('cisa_ransomware') or data.get('known_ransomware') == 'Known') else 'No'}
 Required Action: {data.get('required_action', 'N/A')}
 Due Date: {data.get('due_date', 'N/A')}
 Description: {data.get('short_description', 'N/A')[:200]}"""
+        
+        return base_info
     
     elif itype == "mitre":
         return f"MITRE {data.get('technique_id', 'N/A')}: {data.get('technique_name', 'N/A')}\n{data.get('description', 'N/A')[:200]}"
