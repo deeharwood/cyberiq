@@ -110,19 +110,29 @@ def clean_response_spacing(response_text: str) -> str:
     """
     import re
     
+    print("=== BACKEND CLEANING DEBUG ===")
+    print(f"Original text length: {len(response_text)}")
+    print(f"Contains <table>: {'<table' in response_text.lower()}")
+    print(f"First 200 chars: {response_text[:200]}")
+    
     # Check if response contains a table
     if '<table' not in response_text.lower():
+        print("No table found, returning original")
         return response_text
     
     # Find the position of the first <table> tag
     table_match = re.search(r'<table[^>]*>', response_text, re.IGNORECASE)
     if not table_match:
+        print("Table tag not found by regex")
         return response_text
     
     table_start = table_match.start()
+    print(f"Table starts at position: {table_start}")
     
     # Get everything before the table
-    before_table = response_text[:table_start].strip()
+    before_table = response_text[:table_start]
+    print(f"Content before table length: {len(before_table)}")
+    print(f"Content before table: {before_table[:100]}...")
     
     # Get the table and everything after
     table_and_after = response_text[table_start:]
@@ -130,6 +140,9 @@ def clean_response_spacing(response_text: str) -> str:
     # AGGRESSIVE: Remove ALL content before table
     # User confirmed this looks best
     before_table = ''
+    
+    print(f"Cleaned response length: {len(table_and_after)}")
+    print(f"Cleaned response (first 200 chars): {table_and_after[:200]}")
     
     return before_table + table_and_after
 
