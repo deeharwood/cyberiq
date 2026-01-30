@@ -81,10 +81,16 @@
             display: none;
             padding: 20px;
             background: white;
+            max-height: 400px;
+            overflow-y: auto;
         }
 
         .tab-content.active {
             display: block;
+        }
+
+        #results-content {
+            /* Results content inherits table styling from chat */
         }
 
         .query-header {
@@ -476,19 +482,24 @@
 
         <div class="query-tabs-container" id="queryTabsContainer" style="display: none;">
             <div class="tab-buttons">
-                <button class="tab-button active" onclick="switchTab('kql')">Azure Sentinel (KQL)</button>
+                <button class="tab-button active" onclick="switchTab('results')">Results</button>
+                <button class="tab-button" onclick="switchTab('kql')">Azure Sentinel (KQL)</button>
                 <button class="tab-button" onclick="switchTab('spl')">Splunk (SPL)</button>
                 <button class="tab-button" onclick="switchTab('eql')">Elasticsearch (EQL)</button>
             </div>
             
-            <div class="tab-content active" id="tab-kql">
+            <div class="tab-content active" id="tab-results">
+                <div id="results-content"></div>
+            </div>
+            
+            <div class="tab-content" id="tab-kql">
                 <div class="query-header">
                     <div class="query-title">Azure Sentinel (KQL)</div>
                     <button class="copy-btn" onclick="copyQuery('kql')">
                         <span>📋 Copy Query</span>
                     </button>
                 </div>
-                <div class="query-code" id="query-kql">No query available yet. Ask for detection queries!</div>
+                <div class="query-code" id="query-kql">No query available yet.</div>
             </div>
             
             <div class="tab-content" id="tab-spl">
@@ -498,7 +509,7 @@
                         <span>📋 Copy Query</span>
                     </button>
                 </div>
-                <div class="query-code" id="query-spl">No query available yet. Ask for detection queries!</div>
+                <div class="query-code" id="query-spl">No query available yet.</div>
             </div>
             
             <div class="tab-content" id="tab-eql">
@@ -508,7 +519,7 @@
                         <span>📋 Copy Query</span>
                     </button>
                 </div>
-                <div class="query-code" id="query-eql">No query available yet. Ask for detection queries!</div>
+                <div class="query-code" id="query-eql">No query available yet.</div>
             </div>
         </div>
 
@@ -590,7 +601,7 @@
             return queries;
         }
 
-        function updateQueryTabs(queries) {
+        function updateQueryTabs(queries, cleanContent) {
             currentQueries = queries;
             
             // Check if any queries exist
@@ -600,7 +611,10 @@
                 // Show tabs container
                 document.getElementById('queryTabsContainer').style.display = 'block';
                 
-                // Update each tab
+                // Populate Results tab with the clean content (table + analysis, no queries)
+                document.getElementById('results-content').innerHTML = cleanContent;
+                
+                // Update each query tab
                 if (queries.kql) {
                     document.getElementById('query-kql').textContent = queries.kql;
                 } else {
@@ -619,14 +633,8 @@
                     document.getElementById('query-eql').innerHTML = '<span class="no-queries">No EQL query in this response</span>';
                 }
                 
-                // Switch to first available query tab
-                if (queries.kql) {
-                    switchTabProgrammatic('kql');
-                } else if (queries.spl) {
-                    switchTabProgrammatic('spl');
-                } else if (queries.eql) {
-                    switchTabProgrammatic('eql');
-                }
+                // Default to Results tab
+                switchTabProgrammatic('results');
             } else {
                 // Hide tabs if no queries
                 document.getElementById('queryTabsContainer').style.display = 'none';
@@ -640,9 +648,10 @@
             
             // Add active to selected
             const buttons = document.querySelectorAll('.tab-button');
-            if (tabName === 'kql') buttons[0].classList.add('active');
-            if (tabName === 'spl') buttons[1].classList.add('active');
-            if (tabName === 'eql') buttons[2].classList.add('active');
+            if (tabName === 'results') buttons[0].classList.add('active');
+            if (tabName === 'kql') buttons[1].classList.add('active');
+            if (tabName === 'spl') buttons[2].classList.add('active');
+            if (tabName === 'eql') buttons[3].classList.add('active');
             
             document.getElementById('tab-' + tabName).classList.add('active');
         }
@@ -713,23 +722,40 @@
             console.log('Text length:', text.length);
             console.log('Has table:', text.includes('<table'));
             
+            // Remove SIEM query sections from display (they'll appear in tabs instead)
+            // Remove everything after "**Azure Sentinel" or "**Splunk" or "**Elasticsearch"
+            const queryPatterns = [
+                /\*\*Azure Sentinel[\s\S]*/i,
+                /\*\*Splunk[\s\S]*/i,
+                /\*\*Elasticsearch[\s\S]*/i
+            ];
+            
+            let displayText = text;
+            for (const pattern of queryPatterns) {
+                const match = displayText.match(pattern);
+                if (match) {
+                    // Cut off everything from the first query header onwards
+                    displayText = displayText.substring(0, match.index).trim();
+                    break;
+                }
+            }
+            
             // If response contains table, remove EVERYTHING before it
-            if (text.includes('<table')) {
-                // Find the table start
-                const tableIndex = text.indexOf('<table');
+            if (displayText.includes('<table')) {
+                const tableIndex = displayText.indexOf('<table');
                 if (tableIndex > 0) {
                     console.log('Stripping', tableIndex, 'characters before table');
-                    text = text.substring(tableIndex);
+                    displayText = displayText.substring(tableIndex);
                 }
             }
             
             // Convert newlines to <br>
-            text = text.replace(/\n/g, '<br>');
+            displayText = displayText.replace(/\n/g, '<br>');
             
-            console.log('Final text length:', text.length);
-            console.log('First 100 chars:', text.substring(0, 100));
+            console.log('Final text length:', displayText.length);
+            console.log('First 100 chars:', displayText.substring(0, 100));
             
-            return text;
+            return displayText;
         }
 
         function addMessage(text, sender, isError = false) {
@@ -750,23 +776,28 @@
                 contentDiv.classList.add('error');
             }
             
-            // Set the HTML content
-            contentDiv.innerHTML = formatResponse(text);
-            
-            // AGGRESSIVE CLEANUP: Remove ALL leading <br> tags after DOM is created
-            if (sender === 'assistant') {
-                // Remove all leading <br> elements
-                while (contentDiv.firstChild && contentDiv.firstChild.nodeName === 'BR') {
-                    console.log('Removing leading <br> from message');
-                    contentDiv.firstChild.remove();
-                }
+            // For assistant messages with tables/queries, show brief message and use tabs
+            if (sender === 'assistant' && !isError && text.includes('<table')) {
+                contentDiv.innerHTML = '<p style="color: #1e3a8a; font-weight: 600;">📊 Results ready! Check the tabs below to view the table and SIEM detection queries.</p>';
+            } else {
+                // Set the HTML content normally
+                contentDiv.innerHTML = formatResponse(text);
                 
-                // Also remove leading empty text nodes
-                while (contentDiv.firstChild && 
-                       contentDiv.firstChild.nodeType === 3 && 
-                       !contentDiv.firstChild.textContent.trim()) {
-                    console.log('Removing leading empty text node');
-                    contentDiv.firstChild.remove();
+                // AGGRESSIVE CLEANUP: Remove ALL leading <br> tags after DOM is created
+                if (sender === 'assistant') {
+                    // Remove all leading <br> elements
+                    while (contentDiv.firstChild && contentDiv.firstChild.nodeName === 'BR') {
+                        console.log('Removing leading <br> from message');
+                        contentDiv.firstChild.remove();
+                    }
+                    
+                    // Also remove leading empty text nodes
+                    while (contentDiv.firstChild && 
+                           contentDiv.firstChild.nodeType === 3 && 
+                           !contentDiv.firstChild.textContent.trim()) {
+                        console.log('Removing leading empty text node');
+                        contentDiv.firstChild.remove();
+                    }
                 }
             }
             
@@ -774,9 +805,11 @@
             chatArea.appendChild(messageDiv);
             
             // Extract and update query tabs for assistant responses
-            if (sender === 'assistant' && !isError) {
+            if (sender === 'assistant' && !isError && text.includes('<table')) {
                 const queries = extractQueries(text);
-                updateQueryTabs(queries);
+                // Pass the formatted content to show in Results tab
+                const cleanContent = formatResponse(text);
+                updateQueryTabs(queries, cleanContent);
             }
             
             // Scroll to bottom
