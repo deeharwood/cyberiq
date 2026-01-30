@@ -161,29 +161,6 @@ async def query(request: QueryRequest):
         # Detect if user wants EPSS scores (exploit prediction)
         wants_epss = any(w in query_lower for w in ['epss', 'exploit prediction', 'exploitation', 'priority', 'prioritize'])
         
-        # Detect which specific SIEMs user wants
-        wants_kql = any(w in query_lower for w in ['kql', 'kusto', 'sentinel', 'azure', 'microsoft defender'])
-        wants_spl = any(w in query_lower for w in ['spl', 'splunk'])
-        wants_eql = any(w in query_lower for w in ['eql', 'elasticsearch', 'elastic'])
-        wants_any_siem = any(w in query_lower for w in ['query', 'queries', 'detection', 'hunt', 'hunting', 'siem'])
-        
-        # Determine which SIEMs to include
-        if wants_kql or wants_spl or wants_eql:
-            # User specified specific SIEM(s)
-            include_kql = wants_kql
-            include_spl = wants_spl
-            include_eql = wants_eql
-        elif wants_any_siem:
-            # User asked for queries but didn't specify which - give all 3
-            include_kql = True
-            include_spl = True
-            include_eql = True
-        else:
-            # No query request - don't generate any
-            include_kql = False
-            include_spl = False
-            include_eql = False
-        
         # Extract number if asking for "top N"
         import re
         top_n_match = re.search(r'top\s+(\d+)', query_lower)
@@ -197,14 +174,13 @@ async def query(request: QueryRequest):
 
 User Query: {request.query}
 
-SIEM QUERY GENERATION INSTRUCTIONS:
-Based on the user's query, generate queries for ONLY these SIEMs:
-- Azure Sentinel (KQL): {'YES - Include this' if include_kql else 'NO - Skip this'}
-- Splunk (SPL): {'YES - Include this' if include_spl else 'NO - Skip this'}
-- Elasticsearch (EQL): {'YES - Include this' if include_eql else 'NO - Skip this'}
+SIEM QUERY GENERATION:
+ALWAYS provide detection queries for ALL THREE SIEMs when showing KEVs:
+- Azure Sentinel (KQL)
+- Splunk (SPL)  
+- Elasticsearch (EQL)
 
-CRITICAL: Only generate queries for SIEMs marked as "YES - Include this" above.
-If all are marked "NO", do not include any queries at all.
+The user interface has tabs to switch between queries, so always provide all three.
 
 IMPORTANT: If the user asks for KEVs from a specific time period (e.g., "December 2025", "2025", "last month"), 
 the system has already filtered the results to only show KEVs from that period. If no results are shown, 
