@@ -401,36 +401,52 @@
         }
 
         function formatResponse(text) {
+            console.log('=== FORMAT RESPONSE DEBUG ===');
+            console.log('Original text length:', text.length);
+            console.log('Contains <table>:', text.includes('<table'));
+            console.log('First 200 chars:', text.substring(0, 200));
+            
             // If text contains HTML table
             if (text.includes('<table')) {
-                // First convert newlines to <br> for processing
+                console.log('Table detected, cleaning...');
+                
+                // METHOD 1: Aggressive regex to remove everything before <table>
+                const tableMatch = text.match(/(<table[^>]*>[\s\S]*<\/table>)/i);
+                if (tableMatch) {
+                    console.log('Table extracted via regex');
+                    // Get just the table and everything after it
+                    const tableIndex = text.indexOf(tableMatch[0]);
+                    const afterTable = text.substring(tableIndex);
+                    
+                    console.log('Cleaned text (first 200 chars):', afterTable.substring(0, 200));
+                    return afterTable;
+                }
+                
+                // METHOD 2: If regex fails, use DOM manipulation
+                console.log('Using DOM manipulation method');
                 text = text.replace(/\n/g, '<br>');
                 
-                // Create a temporary div to manipulate DOM
                 const temp = document.createElement('div');
                 temp.innerHTML = text;
                 
-                // Find the table element
                 const table = temp.querySelector('table');
                 
                 if (table) {
-                    // Remove all <br> elements that come before the table
-                    let node = table.previousSibling;
-                    while (node) {
-                        const prev = node.previousSibling;
-                        // Remove if it's a <br> or empty text node
-                        if (node.nodeName === 'BR' || 
-                            (node.nodeType === 3 && !node.textContent.trim())) {
-                            node.remove();
-                        }
-                        node = prev;
+                    console.log('Table found in DOM');
+                    // Remove ALL previous siblings
+                    while (table.previousSibling) {
+                        console.log('Removing sibling:', table.previousSibling.nodeName);
+                        table.previousSibling.remove();
                     }
                 }
                 
-                return temp.innerHTML;
+                const result = temp.innerHTML;
+                console.log('Final result (first 200 chars):', result.substring(0, 200));
+                return result;
             }
             
-            // For non-table responses, just convert newlines
+            // For non-table responses
+            console.log('No table, converting newlines to <br>');
             return text.replace(/\n/g, '<br>');
         }
 
