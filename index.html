@@ -401,53 +401,27 @@
         }
 
         function formatResponse(text) {
-            console.log('=== FORMAT RESPONSE DEBUG ===');
-            console.log('Original text length:', text.length);
-            console.log('Contains <table>:', text.includes('<table'));
-            console.log('First 200 chars:', text.substring(0, 200));
+            console.log('=== FORMAT RESPONSE ===');
+            console.log('Text length:', text.length);
+            console.log('Has table:', text.includes('<table'));
             
-            // If text contains HTML table
+            // If response contains table, remove EVERYTHING before it
             if (text.includes('<table')) {
-                console.log('Table detected, cleaning...');
-                
-                // METHOD 1: Aggressive regex to remove everything before <table>
-                const tableMatch = text.match(/(<table[^>]*>[\s\S]*<\/table>)/i);
-                if (tableMatch) {
-                    console.log('Table extracted via regex');
-                    // Get just the table and everything after it
-                    const tableIndex = text.indexOf(tableMatch[0]);
-                    const afterTable = text.substring(tableIndex);
-                    
-                    console.log('Cleaned text (first 200 chars):', afterTable.substring(0, 200));
-                    return afterTable;
+                // Find the table start
+                const tableIndex = text.indexOf('<table');
+                if (tableIndex > 0) {
+                    console.log('Stripping', tableIndex, 'characters before table');
+                    text = text.substring(tableIndex);
                 }
-                
-                // METHOD 2: If regex fails, use DOM manipulation
-                console.log('Using DOM manipulation method');
-                text = text.replace(/\n/g, '<br>');
-                
-                const temp = document.createElement('div');
-                temp.innerHTML = text;
-                
-                const table = temp.querySelector('table');
-                
-                if (table) {
-                    console.log('Table found in DOM');
-                    // Remove ALL previous siblings
-                    while (table.previousSibling) {
-                        console.log('Removing sibling:', table.previousSibling.nodeName);
-                        table.previousSibling.remove();
-                    }
-                }
-                
-                const result = temp.innerHTML;
-                console.log('Final result (first 200 chars):', result.substring(0, 200));
-                return result;
             }
             
-            // For non-table responses
-            console.log('No table, converting newlines to <br>');
-            return text.replace(/\n/g, '<br>');
+            // Convert newlines to <br>
+            text = text.replace(/\n/g, '<br>');
+            
+            console.log('Final text length:', text.length);
+            console.log('First 100 chars:', text.substring(0, 100));
+            
+            return text;
         }
 
         function addMessage(text, sender, isError = false) {
@@ -467,7 +441,26 @@
             if (isError) {
                 contentDiv.classList.add('error');
             }
+            
+            // Set the HTML content
             contentDiv.innerHTML = formatResponse(text);
+            
+            // AGGRESSIVE CLEANUP: Remove ALL leading <br> tags after DOM is created
+            if (sender === 'assistant') {
+                // Remove all leading <br> elements
+                while (contentDiv.firstChild && contentDiv.firstChild.nodeName === 'BR') {
+                    console.log('Removing leading <br> from message');
+                    contentDiv.firstChild.remove();
+                }
+                
+                // Also remove leading empty text nodes
+                while (contentDiv.firstChild && 
+                       contentDiv.firstChild.nodeType === 3 && 
+                       !contentDiv.firstChild.textContent.trim()) {
+                    console.log('Removing leading empty text node');
+                    contentDiv.firstChild.remove();
+                }
+            }
             
             messageDiv.appendChild(contentDiv);
             chatArea.appendChild(messageDiv);
