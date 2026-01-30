@@ -151,6 +151,33 @@
             margin-top: 0;
         }
 
+        .message-content pre {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 15px 0;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+            line-height: 1.5;
+        }
+
+        .message-content code {
+            background: #f3f4f6;
+            color: #1e3a8a;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+        }
+
+        .message-content pre code {
+            background: transparent;
+            color: #d4d4d4;
+            padding: 0;
+        }
+
         .message.user .message-content {
             background: linear-gradient(135deg, #1e3a8a, #7c3aed);
             color: white;
@@ -318,7 +345,7 @@
                 <div class="examples">
                     <strong>Try these:</strong><br>
                     <span class="example-query" onclick="askQuestion('Show me top 5 KEVs with highest CVSS scores')">Top 5 KEVs by CVSS</span>
-                    <span class="example-query" onclick="askQuestion('What are common phishing techniques?')">Phishing techniques</span>
+                    <span class="example-query" onclick="askQuestion('Show me KEVs from December 2025 with KQL query')">December KEVs + KQL</span>
                     <span class="example-query" onclick="askQuestion('Which KEVs are used in ransomware?')">Ransomware KEVs</span>
                 </div>
             </div>
