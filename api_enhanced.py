@@ -1,306 +1,373 @@
-"""
-CyberIQ API - With on-demand CVSS enrichment and table formatting
-"""
-
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
-from pydantic import BaseModel
-from typing import Optional, List, Dict
-import anthropic
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+from anthropic import Anthropic
 import os
+import requests
+import json
+from datetime import datetime, timedelta
 
-# Import loaders
-from vulnerability_loaders import load_kev_data, load_recent_cves
-from cvss_enricher import enrich_kevs_with_cvss
-
-app = FastAPI(title="CyberIQ API")
-
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Global data storage
-mitre_data = []
-kev_data = []
-cve_data = []
+app = Flask(__name__)
+CORS(app)
 
 # Initialize Anthropic client
-anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-if not anthropic_api_key:
-    raise ValueError("ANTHROPIC_API_KEY environment variable not set")
+client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
-client = anthropic.Anthropic(api_key=anthropic_api_key)
+# Cache for EPSS data
+epss_cache = {}
 
-
-class QueryRequest(BaseModel):
-    query: str
-
-
-class QueryResponse(BaseModel):
-    response: str
-    sources: Optional[List[Dict]] = []
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Load all data on startup"""
-    global mitre_data, kev_data, cve_data
-    
-    print("🚀 Starting CyberIQ API...")
-    
-    # Load MITRE ATT&CK data
+def fetch_kev_data():
+    """Fetch KEV data from CISA"""
     try:
-        print("📥 Loading MITRE ATT&CK data...")
-        from mitre_loaders import load_attack_data
-        mitre_data = load_attack_data()
-        print(f"✅ Loaded {len(mitre_data)} MITRE ATT&CK techniques")
+        response = requests.get(
+            'https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json',
+            timeout=10
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data.get('vulnerabilities', [])
     except Exception as e:
-        print(f"⚠️  Error loading MITRE data: {str(e)}")
-        mitre_data = []
+        print(f"Error fetching KEV data: {str(e)}")
+        return []
+
+def fetch_cvss_data(cves):
+    """Fetch CVSS scores from NVD"""
+    cvss_data = {}
     
-    # Load CISA KEV data (WITHOUT enrichment initially)
-    try:
-        print("⚠️  Loading CISA KEV data...")
-        kev_data = load_kev_data()
-        print(f"✅ Loaded {len(kev_data)} KEVs (CVSS enrichment on-demand)")
-    except Exception as e:
-        print(f"❌ Error loading KEV data: {str(e)}")
-        kev_data = []
+    if not cves:
+        return cvss_data
     
-    # Skip CVE loading
-    cve_data = []
+    for cve in cves[:50]:
+        try:
+            response = requests.get(
+                f'https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve}',
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'vulnerabilities' in data and len(data['vulnerabilities']) > 0:
+                    vuln = data['vulnerabilities'][0]
+                    cve_data = vuln.get('cve', {})
+                    metrics = cve_data.get('metrics', {})
+                    
+                    if 'cvssMetricV31' in metrics and len(metrics['cvssMetricV31']) > 0:
+                        cvss_score = metrics['cvssMetricV31'][0]['cvssData']['baseScore']
+                        cvss_data[cve] = cvss_score
+                    elif 'cvssMetricV30' in metrics and len(metrics['cvssMetricV30']) > 0:
+                        cvss_score = metrics['cvssMetricV30'][0]['cvssData']['baseScore']
+                        cvss_data[cve] = cvss_score
+                    elif 'cvssMetricV2' in metrics and len(metrics['cvssMetricV2']) > 0:
+                        cvss_score = metrics['cvssMetricV2'][0]['cvssData']['baseScore']
+                        cvss_data[cve] = cvss_score
+        except Exception as e:
+            print(f"Error fetching CVSS for {cve}: {str(e)}")
+            continue
     
-    total_items = len(mitre_data) + len(kev_data)
-    print(f"🎉 CyberIQ ready with {total_items} threat intelligence items!")
+    return cvss_data
 
+def fetch_epss_data(cves):
+    """Fetch EPSS scores from FIRST.org"""
+    global epss_cache
+    epss_data = {}
+    
+    if not cves:
+        return epss_data
+    
+    uncached_cves = [cve for cve in cves if cve not in epss_cache]
+    
+    if uncached_cves:
+        try:
+            cve_list = ','.join(uncached_cves[:100])
+            response = requests.get(
+                f'https://api.first.org/data/v1/epss?cve={cve_list}',
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'data' in data:
+                    for item in data['data']:
+                        cve = item.get('cve')
+                        epss = float(item.get('epss', 0))
+                        epss_cache[cve] = epss
+        except Exception as e:
+            print(f"Error fetching EPSS data: {str(e)}")
+    
+    for cve in cves:
+        if cve in epss_cache:
+            epss_data[cve] = epss_cache[cve]
+    
+    return epss_data
 
-@app.get("/", response_class=HTMLResponse)
-async def root():
-    """Serve the chat interface"""
+def calculate_priority_label(cvss, epss):
+    """Calculate priority label based on CVSS and EPSS"""
+    if cvss is None or epss is None:
+        return "🟡 MEDIUM"
+    
+    priority = cvss * epss
+    
+    if priority >= 7.0:
+        return "🔴 URGENT"
+    elif priority >= 3.0:
+        return "🟠 HIGH"
+    elif priority >= 1.0:
+        return "🟡 MEDIUM"
+    else:
+        return "🟢 LOW"
+
+def filter_vulnerabilities(vulnerabilities, query_text):
+    """Filter vulnerabilities based on query text"""
+    if not query_text:
+        return vulnerabilities[:20]
+    
+    query_lower = query_text.lower()
+    
+    # Extract filters from query
+    vendor_filter = None
+    date_filter = None
+    severity_filter = None
+    
+    # Simple keyword extraction
+    if 'microsoft' in query_lower:
+        vendor_filter = 'microsoft'
+    elif 'cisco' in query_lower:
+        vendor_filter = 'cisco'
+    elif 'adobe' in query_lower:
+        vendor_filter = 'adobe'
+    elif 'apple' in query_lower:
+        vendor_filter = 'apple'
+    elif 'google' in query_lower:
+        vendor_filter = 'google'
+    
+    if 'last 7 days' in query_lower or 'past week' in query_lower:
+        date_filter = 7
+    elif 'last 30 days' in query_lower or 'past month' in query_lower:
+        date_filter = 30
+    elif 'last 90 days' in query_lower or 'past 90 days' in query_lower:
+        date_filter = 90
+    
+    if 'critical' in query_lower:
+        severity_filter = 'critical'
+    
+    # Filter
+    filtered = vulnerabilities
+    
+    if vendor_filter:
+        filtered = [v for v in filtered if vendor_filter in v.get('vendorProject', '').lower()]
+    
+    if date_filter:
+        cutoff_date = datetime.now() - timedelta(days=date_filter)
+        filtered = [v for v in filtered if datetime.strptime(v.get('dateAdded', '2000-01-01'), '%Y-%m-%d') > cutoff_date]
+    
+    if not vendor_filter and not severity_filter:
+        filtered = [v for v in filtered if 
+                   query_lower in v.get('vulnerabilityName', '').lower() or
+                   query_lower in v.get('shortDescription', '').lower() or
+                   query_lower in v.get('vendorProject', '').lower() or
+                   query_lower in v.get('product', '').lower()]
+    
+    return filtered[:20]
+
+def enrich_vulnerability_data(vulnerabilities, cvss_data, epss_data):
+    """Enrich vulnerability data with CVSS and EPSS scores"""
+    enriched = []
+    
+    for vuln in vulnerabilities:
+        cve = vuln.get('cveID')
+        cvss = cvss_data.get(cve)
+        epss = epss_data.get(cve)
+        
+        priority_label = calculate_priority_label(cvss, epss)
+        
+        enriched.append({
+            'cve': cve,
+            'vendor': vuln.get('vendorProject'),
+            'product': vuln.get('product'),
+            'name': vuln.get('vulnerabilityName'),
+            'description': vuln.get('shortDescription'),
+            'date_added': vuln.get('dateAdded'),
+            'due_date': vuln.get('dueDate'),
+            'cvss': cvss,
+            'epss': epss,
+            'priority': priority_label
+        })
+    
+    return enriched
+
+@app.route('/api/query', methods=['POST'])
+def query():
+    """
+    Main endpoint for threat intelligence analysis (NO query generation)
+    """
     try:
-        with open("index.html", "r") as f:
-            return f.read()
-    except FileNotFoundError:
-        return "<h1>CyberIQ</h1><p>Chat interface not found.</p>"
-
-
-@app.get("/api/status")
-async def status():
-    """API health check"""
-    return {
-        "status": "online",
-        "service": "CyberIQ Threat Intelligence Platform",
-        "data_loaded": {
-            "mitre_techniques": len(mitre_data),
-            "cisa_kevs": len(kev_data),
-            "total": len(mitre_data) + len(kev_data)
-        }
-    }
-
-
-@app.post("/query", response_model=QueryResponse)
-async def query(request: QueryRequest):
-    """Process queries with on-demand CVSS enrichment and table formatting"""
-    try:
-        query_lower = request.query.lower()
+        data = request.get_json()
+        query_text = data.get('query', '')
         
-        # Detect if user wants CVSS scores
-        wants_cvss = any(w in query_lower for w in ['cvss', 'score', 'severity', 'highest', 'critical', 'top'])
-        wants_top_n = any(w in query_lower for w in ['top', 'highest'])
+        print(f"Query received: {query_text}")
         
-        # Extract number if asking for "top N"
-        import re
-        top_n_match = re.search(r'top\s+(\d+)', query_lower)
-        num_items = int(top_n_match.group(1)) if top_n_match else 10
-        num_items = min(num_items, 20)  # Cap at 20 to avoid rate limits
+        # Fetch KEV data
+        kev_data = fetch_kev_data()
         
-        # Build context
-        context = f"""You are CyberIQ with access to:
-- {len(mitre_data)} MITRE ATT&CK techniques
-- {len(kev_data)} CISA Known Exploited Vulnerabilities
+        if not kev_data:
+            return jsonify({
+                'error': 'Unable to fetch KEV data from CISA'
+            }), 500
+        
+        # Filter vulnerabilities based on query
+        filtered_data = filter_vulnerabilities(kev_data, query_text)
+        
+        if not filtered_data:
+            return jsonify({
+                'error': 'No vulnerabilities found matching your criteria'
+            }), 404
+        
+        print(f"Found {len(filtered_data)} matching vulnerabilities")
+        
+        # Get CVEs
+        cves = [vuln.get('cveID') for vuln in filtered_data]
+        
+        # Fetch CVSS and EPSS data
+        print("Fetching CVSS and EPSS data...")
+        cvss_data = fetch_cvss_data(cves)
+        epss_data = fetch_epss_data(cves)
+        
+        # Enrich vulnerability data
+        enriched_data = enrich_vulnerability_data(filtered_data, cvss_data, epss_data)
+        
+        # Sort by priority
+        priority_order = {"🔴 URGENT": 0, "🟠 HIGH": 1, "🟡 MEDIUM": 2, "🟢 LOW": 3}
+        enriched_data.sort(key=lambda x: priority_order.get(x['priority'], 4))
+        
+        # Build context for Claude (analysis only, NO queries)
+        context = f"""
+You are a cybersecurity threat intelligence analyst.
 
-User Query: {request.query}
+Analyze these {len(enriched_data)} vulnerabilities from the CISA KEV catalog.
 
-!!CRITICAL!! SHOW THE HTML TABLE FIRST - NO PREAMBLE, NO INTRODUCTION, NO EXPLANATION BEFORE THE TABLE.
+User query: "{query_text}"
 
-Start your response IMMEDIATELY with <table>. Analysis comes AFTER.
+Vulnerabilities:
+{json.dumps(enriched_data, indent=2)}
 
-CORRECT FORMAT:
-<table style="width:100%; border-collapse: collapse; margin: 5px 0 15px 0;">
-[table rows here]
-</table>
+Provide a concise threat intelligence analysis:
+1. Brief summary of the threat landscape (2-3 sentences)
+2. Top 3-5 most critical vulnerabilities with their priority labels (URGENT/HIGH/MEDIUM/LOW) and EPSS scores
+3. Key patterns or trends you observe
+4. Actionable recommendations for security teams
 
-Analysis text here.
-
-WRONG FORMAT (DO NOT DO THIS):
-Here are the results...
-Based on analysis...
-Let me explain...
-<table>
-
-HTML TABLE STRUCTURE:
-
-<table style="width:100%; border-collapse: collapse; margin: 5px 0 15px 0;">
-<thead>
-<tr style="background: linear-gradient(135deg, #1e3a8a, #7c3aed); color: white;">
-<th style="padding: 12px; text-align: left; border: 1px solid #ddd;">CVE ID</th>
-<th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Vulnerability</th>
-<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">CVSS</th>
-<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Severity</th>
-<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Date Added</th>
-<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Ransomware</th>
-</tr>
-</thead>
-<tbody>
-<tr style="background: #f9fafb;">
-<td style="padding: 12px; border: 1px solid #ddd;">
-<a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">CVE-XXXX-XXXXX ↗</a>
-</td>
-<td style="padding: 12px; border: 1px solid #ddd;">Vulnerability name</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700; color: #dc2626;">9.8</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center;"><span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">CRITICAL</span></td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center;">2026-01-26</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center;">Yes</td>
-</tr>
-<tr style="background: white;">
-<td style="padding: 12px; border: 1px solid #ddd;">
-<a href="https://nvd.nist.gov/vuln/detail/CVE-YYYY-YYYYY" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">CVE-YYYY-YYYYY ↗</a>
-</td>
-<td style="padding: 12px; border: 1px solid #ddd;">Another vulnerability</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700; color: #ea580c;">8.5</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center;"><span style="background: #ea580c; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">HIGH</span></td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center;">2026-01-25</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center;">No</td>
-</tr>
-</tbody>
-</table>
-
-CVE LINKS: <a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">CVE-XXXX-XXXXX ↗</a>
-
-SEVERITY BADGES:
-CRITICAL: <span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">CRITICAL</span>
-HIGH: <span style="background: #ea580c; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">HIGH</span>
-MEDIUM: <span style="background: #f59e0b; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">MEDIUM</span>
-LOW: <span style="background: #84cc16; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">LOW</span>
-
-CVSS COLORS: 9.0-10.0=#dc2626, 7.0-8.9=#ea580c, 4.0-6.9=#f59e0b, <4.0=#84cc16
-
-Row backgrounds alternate: #f9fafb and white
-
-After table: Brief key findings (2-3 sentences max).
-
+Be concise and focus on actionable intelligence. Do NOT generate SIEM queries.
 """
         
-        # Smart search with CVSS enrichment if needed
-        relevant_items = search_data_smart(request.query)
+        print("Calling Claude API for analysis...")
         
-        # If user wants CVSS and we have KEVs, enrich them
-        if wants_cvss and relevant_items and relevant_items[0].get('type') == 'kev':
-            print(f"🔍 Enriching top {num_items} KEVs with CVSS scores...")
-            
-            kevs_to_enrich = [item['data'] for item in relevant_items[:num_items] if item.get('type') == 'kev']
-            enriched_kevs = enrich_kevs_with_cvss(kevs_to_enrich, max_items=num_items)
-            
-            # Replace with enriched versions
-            for i, enriched in enumerate(enriched_kevs):
-                if i < len(relevant_items):
-                    relevant_items[i]['data'] = enriched
-            
-            print(f"✅ Enriched {len(enriched_kevs)} KEVs with CVSS scores")
+        # Use fast model with lower token count (no queries needed)
+        response = client.messages.create(
+            model="claude-sonnet-3-5-20241022-v2:0",
+            max_tokens=1500,
+            messages=[{"role": "user", "content": context}]
+        )
         
-        if relevant_items:
-            context += "Relevant Intelligence:\n\n"
-            for item in relevant_items[:num_items]:
-                context += format_item_detailed(item) + "\n\n"
+        response_text = response.content[0].text
         
-        # Call Claude
-        message = client.messages.create(
-            model="claude-sonnet-4-20250514",
+        print("Analysis complete")
+        
+        return jsonify({
+            'response': response_text,
+            'count': len(enriched_data),
+            'vulnerabilities': enriched_data  # Return for query generation later
+        })
+        
+    except Exception as e:
+        print(f"Error in query endpoint: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/generate-query', methods=['POST'])
+def generate_query():
+    """
+    Separate endpoint for generating SIEM queries on demand
+    """
+    try:
+        data = request.get_json()
+        query_text = data.get('query', '')
+        vulnerabilities = data.get('vulnerabilities', [])
+        query_type = data.get('query_type', 'spl')
+        
+        print(f"Generating {query_type} query for: {query_text}")
+        
+        if not vulnerabilities:
+            return jsonify({
+                'error': 'No vulnerability data provided'
+            }), 400
+        
+        # Build context for query generation
+        query_type_names = {
+            'spl': 'Splunk (SPL)',
+            'kql': 'Azure Sentinel (KQL)',
+            'eql': 'Elasticsearch (EQL)'
+        }
+        
+        query_name = query_type_names.get(query_type, 'Unknown')
+        
+        context = f"""
+You are a cybersecurity detection engineer.
+
+Based on these vulnerabilities from the CISA KEV catalog, generate a production-ready detection query.
+
+User query: "{query_text}"
+
+Top Vulnerabilities:
+{json.dumps(vulnerabilities[:10], indent=2)}
+
+Generate a comprehensive {query_name} detection query that:
+1. Detects exploitation attempts for these vulnerabilities
+2. Is production-ready and well-commented
+3. Includes multiple detection methods (process execution, network connections, file modifications, registry changes, etc.)
+4. Uses proper syntax for {query_name}
+5. Is optimized for performance
+
+Output ONLY the query code, no explanation or markdown formatting.
+"""
+        
+        print("Calling Claude API for query generation...")
+        
+        # Use standard model with more tokens for comprehensive query
+        response = client.messages.create(
+            model="claude-sonnet-3-5-20241022-v2:0",
             max_tokens=2000,
             messages=[{"role": "user", "content": context}]
         )
         
-        return QueryResponse(
-            response=message.content[0].text,
-            sources=relevant_items[:5]
-        )
-    
+        query_code = response.content[0].text
+        
+        # Clean up any markdown formatting
+        query_code = query_code.replace('```spl', '').replace('```kql', '').replace('```eql', '').replace('```', '').strip()
+        
+        print("Query generation complete")
+        
+        return jsonify({
+            'query': query_code,
+            'query_type': query_type
+        })
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error in generate-query endpoint: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
+@app.route('/health', methods=['GET'])
+def health():
+    """Health check endpoint"""
+    return jsonify({'status': 'healthy'}), 200
 
-def search_data_smart(query: str) -> List[Dict]:
-    """Smart search with KEV prioritization"""
-    results = []
-    q = query.lower()
-    
-    # Detect intent
-    wants_recent = any(w in q for w in ['recent', 'latest', 'new'])
-    wants_top = 'top' in q
-    wants_highest = any(w in q for w in ['highest', 'critical', 'severe'])
-    wants_ransomware = 'ransomware' in q
-    wants_kev = any(w in q for w in ['kev', 'exploited', 'vulnerability', 'cve', 'cross'])
-    wants_mitre = any(w in q for w in ['technique', 'tactic', 'mitre', 'attack', 'phishing'])
-    
-    # KEV queries (most common)
-    if wants_kev or wants_recent or wants_top or wants_highest or not wants_mitre:
-        kevs = sorted(kev_data, key=lambda x: x.get('date_added', ''), reverse=True)
-        
-        if wants_ransomware:
-            kevs = [k for k in kevs if k.get('cisa_ransomware') or k.get('known_ransomware') == 'Known']
-        
-        # Return top results (will be enriched if CVSS requested)
-        for kev in kevs[:30]:  # Get more candidates
-            results.append({"type": "kev", "data": kev})
-    
-    # MITRE queries
-    elif wants_mitre:
-        for item in mitre_data[:20]:
-            if any(word in str(item).lower() for word in q.split() if len(word) > 3):
-                results.append({"type": "mitre", "data": item})
-                if len(results) >= 20:
-                    break
-    
-    # Default: recent KEVs
-    if not results:
-        recent = sorted(kev_data, key=lambda x: x.get('date_added', ''), reverse=True)[:20]
-        results = [{"type": "kev", "data": k} for k in recent]
-    
-    return results
+@app.route('/')
+def index():
+    """Serve the main HTML page"""
+    with open('index.html', 'r') as f:
+        return f.read()
 
-
-def format_item_detailed(item: Dict) -> str:
-    """Detailed formatting for Claude"""
-    itype = item.get("type")
-    data = item.get("data", {})
-    
-    if itype == "kev":
-        cvss = data.get('cvss_score', 0)
-        cvss_str = f"{cvss:.1f}" if cvss > 0 else "Pending"
-        
-        return f"""KEV {data.get('cve_id', 'N/A')}: {data.get('vulnerability_name', 'N/A')}
-Vendor/Product: {data.get('vendor_project', 'N/A')} {data.get('product', 'N/A')}
-Date Added: {data.get('date_added', 'N/A')}
-CVSS Score: {cvss_str}
-CVSS Severity: {data.get('cvss_severity', 'HIGH')}
-CWE: {data.get('cwe_id', 'N/A')}
-Ransomware: {'Yes' if (data.get('cisa_ransomware') or data.get('known_ransomware') == 'Known') else 'No'}
-Required Action: {data.get('required_action', 'N/A')}
-Due Date: {data.get('due_date', 'N/A')}
-Description: {data.get('short_description', 'N/A')[:200]}"""
-    
-    elif itype == "mitre":
-        return f"MITRE {data.get('technique_id', 'N/A')}: {data.get('technique_name', 'N/A')}\n{data.get('description', 'N/A')[:200]}"
-    
-    return str(data)[:200]
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+if __name__ == '__main__':
+    port = int(os.getenv('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=False)
