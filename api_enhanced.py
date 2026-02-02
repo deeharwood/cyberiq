@@ -104,6 +104,49 @@ async def status():
     }
 
 
+def clean_response_spacing(response_text: str) -> str:
+    """
+    Remove ALL content before HTML tables - table must appear first
+    """
+    import re
+    
+    print("=== BACKEND CLEANING DEBUG ===")
+    print(f"Original text length: {len(response_text)}")
+    print(f"Contains <table>: {'<table' in response_text.lower()}")
+    print(f"First 200 chars: {response_text[:200]}")
+    
+    # Check if response contains a table
+    if '<table' not in response_text.lower():
+        print("No table found, returning original")
+        return response_text
+    
+    # Find the position of the first <table> tag
+    table_match = re.search(r'<table[^>]*>', response_text, re.IGNORECASE)
+    if not table_match:
+        print("Table tag not found by regex")
+        return response_text
+    
+    table_start = table_match.start()
+    print(f"Table starts at position: {table_start}")
+    
+    # Get everything before the table
+    before_table = response_text[:table_start]
+    print(f"Content before table length: {len(before_table)}")
+    print(f"Content before table: {before_table[:100]}...")
+    
+    # Get the table and everything after
+    table_and_after = response_text[table_start:]
+    
+    # AGGRESSIVE: Remove ALL content before table
+    # User confirmed this looks best
+    before_table = ''
+    
+    print(f"Cleaned response length: {len(table_and_after)}")
+    print(f"Cleaned response (first 200 chars): {table_and_after[:200]}")
+    
+    return before_table + table_and_after
+
+
 @app.post("/query", response_model=QueryResponse)
 async def query(request: QueryRequest):
     """Process queries with on-demand CVSS enrichment and table formatting"""
@@ -132,7 +175,7 @@ User Query: {request.query}
 Start your response IMMEDIATELY with <table>. Analysis comes AFTER.
 
 CORRECT FORMAT:
-<table style="width:100%; border-collapse: collapse; margin: 5px 0 15px 0;">
+<table style="width:100%; border-collapse: collapse; margin: 0 0 15px 0;">
 [table rows here]
 </table>
 
@@ -146,7 +189,7 @@ Let me explain...
 
 HTML TABLE STRUCTURE:
 
-<table style="width:100%; border-collapse: collapse; margin: 5px 0 15px 0;">
+<table style="width:100%; border-collapse: collapse; margin: 0 0 15px 0;">
 <thead>
 <tr style="background: linear-gradient(135deg, #1e3a8a, #7c3aed); color: white;">
 <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">CVE ID</th>
@@ -226,8 +269,11 @@ After table: Brief key findings (2-3 sentences max).
             messages=[{"role": "user", "content": context}]
         )
         
+        # Post-process response to remove excessive spacing before table
+        response_text = clean_response_spacing(message.content[0].text)
+        
         return QueryResponse(
-            response=message.content[0].text,
+            response=response_text,
             sources=relevant_items[:5]
         )
     
@@ -304,3 +350,4 @@ Description: {data.get('short_description', 'N/A')[:200]}"""
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8080)
+    
