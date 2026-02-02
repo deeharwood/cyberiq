@@ -3,603 +3,866 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CyberIQ - AI-Powered Threat Intelligence</title>
+    <title>CyberIQ - Threat Intelligence Demo</title>
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #f5f5f5;
-            min-height: 100vh;
-            padding: 20px;
-        }
-        
-        .container {
-            max-width: 900px;
-            margin: 0 auto;
-        }
-        
-        .header {
-            text-align: center;
-            margin-bottom: 40px;
-            padding-top: 40px;
-        }
-        
-        .header h1 {
-            color: #333;
-            font-size: 36px;
-            margin-bottom: 10px;
-        }
-        
-        .header p {
-            color: #666;
-            font-size: 16px;
-        }
-        
-        .chat-container {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            padding: 30px;
-            margin-bottom: 20px;
-        }
-        
-        .prompt-box {
-            width: 100%;
-            min-height: 120px;
-            padding: 15px;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            font-size: 15px;
-            font-family: inherit;
-            resize: vertical;
-            transition: border-color 0.3s;
-        }
-        
-        .prompt-box:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        
-        .prompt-box::placeholder {
-            color: #999;
-        }
-        
-        .button-container {
-            margin-top: 15px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #1e3a8a 0%, #7c3aed 100%);
+            height: 100vh;
             display: flex;
-            justify-content: flex-end;
-        }
-        
-        .search-btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 12px 32px;
-            border: none;
-            border-radius: 6px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        
-        .search-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        }
-        
-        .search-btn:active {
-            transform: translateY(0);
-        }
-        
-        .search-btn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        #loading {
-            text-align: center;
-            padding: 40px;
-            display: none;
-        }
-        
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        
-        #loading-text {
-            color: #666;
-            font-size: 16px;
-        }
-        
-        .results-container {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            padding: 30px;
-            margin-bottom: 20px;
-            display: none;
-        }
-        
-        .performance-badge {
-            display: inline-block;
-            background: #4caf50;
-            color: white;
-            padding: 6px 12px;
-            border-radius: 4px;
-            font-size: 13px;
-            margin-bottom: 20px;
-            font-weight: 600;
-        }
-        
-        .results-content {
-            line-height: 1.8;
-            color: #333;
-            margin-bottom: 30px;
-        }
-        
-        .results-content h3 {
-            color: #333;
-            margin: 20px 0 10px 0;
-            font-size: 18px;
-        }
-        
-        .results-content p {
-            margin: 10px 0;
-        }
-        
-        .results-content strong {
-            color: #667eea;
-        }
-        
-        .priority-urgent { color: #f44336; font-weight: bold; }
-        .priority-high { color: #ff9800; font-weight: bold; }
-        .priority-medium { color: #ffc107; font-weight: bold; }
-        .priority-low { color: #4caf50; font-weight: bold; }
-        
-        .query-generation-section {
-            border-top: 2px solid #f0f0f0;
-            padding-top: 25px;
-            margin-top: 25px;
-        }
-        
-        .query-generation-section h3 {
-            color: #333;
-            margin-bottom: 15px;
-            font-size: 18px;
-        }
-        
-        .query-options {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        
-        .query-option {
-            flex: 1;
-        }
-        
-        .query-option input[type="radio"] {
-            display: none;
-        }
-        
-        .query-option label {
-            display: flex;
-            flex-direction: column;
+            justify-content: center;
             align-items: center;
             padding: 20px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.3s;
-            text-align: center;
         }
-        
-        .query-option label:hover {
-            border-color: #667eea;
-            background: #f8f9ff;
+
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 1000px; /* Wider for tabs */
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
-        
-        .query-option input[type="radio"]:checked + label {
-            border-color: #667eea;
-            background: linear-gradient(135deg, #667eea15 0%, #764ba215 100%);
-            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
-        }
-        
-        .query-option-icon {
-            font-size: 32px;
-            margin-bottom: 8px;
-        }
-        
-        .query-option-name {
-            font-weight: 600;
-            color: #333;
-            margin-bottom: 4px;
-        }
-        
-        .query-option-desc {
-            font-size: 12px;
-            color: #666;
-        }
-        
-        .generate-query-btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+
+        .header {
+            background: linear-gradient(135deg, #1e3a8a, #7c3aed);
             color: white;
-            padding: 12px 28px;
+            padding: 20px 30px;
+            border-bottom: 3px solid #6d28d9;
+        }
+
+        .query-tabs-container {
+            background: #f9fafb;
+            border-top: 2px solid #e5e7eb;
+            padding: 0;
+        }
+
+        .tab-buttons {
+            display: flex;
+            gap: 0;
+            background: #e5e7eb;
+            padding: 0;
+        }
+
+        .tab-button {
+            flex: 1;
+            padding: 12px 20px;
+            background: #e5e7eb;
             border: none;
-            border-radius: 6px;
-            font-size: 14px;
+            font-size: 0.95rem;
             font-weight: 600;
+            color: #6b7280;
             cursor: pointer;
             transition: all 0.2s;
+            border-bottom: 3px solid transparent;
+        }
+
+        .tab-button:hover {
+            background: #d1d5db;
+            color: #1e3a8a;
+        }
+
+        .tab-button.active {
+            background: white;
+            color: #1e3a8a;
+            border-bottom: 3px solid #7c3aed;
+        }
+
+        .tab-content {
             display: none;
-        }
-        
-        .generate-query-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        }
-        
-        .generate-query-btn:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        .query-result {
-            margin-top: 20px;
-            display: none;
-        }
-        
-        .query-box {
-            background: #f8f9fa;
             padding: 20px;
-            border-radius: 8px;
-            border-left: 4px solid #667eea;
-            position: relative;
+            background: white;
+            max-height: 400px;
+            overflow-y: auto;
         }
-        
-        .query-box h4 {
-            color: #333;
+
+        .tab-content.active {
+            display: block;
+        }
+
+        #results-content {
+            /* Results content inherits table styling from chat */
+        }
+
+        .query-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 15px;
-            font-size: 16px;
         }
-        
-        .query-box pre {
-            background: #2d2d2d;
-            color: #f8f8f2;
-            padding: 20px;
-            border-radius: 6px;
-            overflow-x: auto;
-            font-size: 13px;
-            line-height: 1.6;
-            font-family: 'Courier New', monospace;
+
+        .query-title {
+            font-weight: 700;
+            color: #1e3a8a;
+            font-size: 1.1rem;
         }
-        
-        .copy-button {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: #667eea;
+
+        .copy-btn {
+            background: #7c3aed;
             color: white;
             border: none;
             padding: 8px 16px;
-            border-radius: 4px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 600;
             cursor: pointer;
-            font-size: 12px;
-            transition: background 0.3s;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
-        
-        .copy-button:hover {
-            background: #764ba2;
+
+        .copy-btn:hover {
+            background: #6d28d9;
+            transform: translateY(-1px);
         }
-        
-        .copy-button.copied {
-            background: #4caf50;
+
+        .copy-btn:active {
+            background: #5b21b6;
+            transform: translateY(0);
         }
-        
-        .hint {
-            color: #888;
-            font-size: 13px;
-            margin-top: 10px;
+
+        .copy-btn.copied {
+            background: #10b981;
+        }
+
+        .query-code {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+            overflow-x: auto;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #374151;
+        }
+
+        .no-queries {
+            color: #6b7280;
+            text-align: center;
+            padding: 40px 20px;
             font-style: italic;
+        }
+
+        .header h1 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+            font-size: 0.85rem;
+        }
+
+        .stat {
+            background: rgba(255,255,255,0.2);
+            padding: 5px 12px;
+            border-radius: 6px;
+        }
+
+        .chat-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 30px;
+            background: #f9fafb;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .message.user {
+            justify-content: flex-end;
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 15px 20px;
+            border-radius: 12px;
+            line-height: 1.4;
+        }
+
+        .message.assistant .message-content {
+            max-width: 90%;
+            line-height: 1.4;
+        }
+
+        .message-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0 0 15px 0;
+            font-size: 0.9rem;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .message-content a {
+            color: #1e3a8a;
+            text-decoration: none;
+            border-bottom: 2px solid #7c3aed;
+            transition: all 0.2s;
+            font-weight: 600;
+        }
+
+        .message-content a:hover {
+            color: #7c3aed;
+            border-bottom-color: #1e3a8a;
+            background: rgba(124, 58, 237, 0.1);
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+
+        .message-content th {
+            padding: 12px 8px;
+            text-align: left;
+            font-weight: 600;
+            border: 1px solid #ddd;
+        }
+
+        .message-content td {
+            padding: 10px 8px;
+            border: 1px solid #ddd;
+        }
+
+        .message-content tr:hover td {
+            background: #f3f4f6 !important;
+        }
+
+        .message-content strong {
+            color: #1e3a8a;
+        }
+
+        .message-content ul, .message-content ol {
+            margin-left: 20px;
+            margin-top: 10px;
+        }
+
+        .message-content p {
+            margin: 5px 0;
+        }
+
+        .message-content p:first-child {
+            margin-top: 0;
+        }
+
+        .message-content pre {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 15px 0;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 0.9em;
+            line-height: 1.5;
+            border-left: 4px solid #7c3aed;
+        }
+
+        .message-content code {
+            background: #f3f4f6;
+            color: #1e3a8a;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .message-content pre code {
+            background: transparent;
+            color: #d4d4d4;
+            padding: 0;
+        }
+        
+        .message-content strong {
+            color: #1e3a8a;
+            font-weight: 600;
+        }
+        
+        /* Highlight different query languages */
+        .message-content h4 {
+            color: #7c3aed;
+            margin: 20px 0 10px 0;
+            font-size: 1.1em;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(135deg, #1e3a8a, #7c3aed);
+            color: white;
+        }
+
+        .message.assistant .message-content {
+            background: white;
+            border: 1px solid #e5e7eb;
+            color: #1f2937;
+        }
+
+        .input-area {
+            padding: 20px 30px;
+            background: white;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .input-container {
+            display: flex;
+            gap: 10px;
+        }
+
+        input {
+            flex: 1;
+            padding: 12px 20px;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input:focus {
+            border-color: #7c3aed;
+        }
+
+        button {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #1e3a8a, #7c3aed);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #6b7280;
+            font-size: 0.9rem;
+        }
+
+        .loading-dots {
+            display: flex;
+            gap: 4px;
+        }
+
+        .loading-dot {
+            width: 8px;
+            height: 8px;
+            background: #7c3aed;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+
+        .loading-dot:nth-child(1) { animation-delay: -0.32s; }
+        .loading-dot:nth-child(2) { animation-delay: -0.16s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+
+        .examples {
+            padding: 10px 0;
+            font-size: 0.85rem;
+            color: #6b7280;
+        }
+
+        .example-query {
+            display: inline-block;
+            background: #f3f4f6;
+            padding: 6px 12px;
+            margin: 4px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .example-query:hover {
+            background: #e5e7eb;
+            color: #1e3a8a;
+        }
+
+        .welcome {
+            text-align: center;
+            color: #6b7280;
+            padding: 40px 20px;
+        }
+
+        .welcome h2 {
+            color: #1f2937;
+            margin-bottom: 10px;
+        }
+
+        .error {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                height: 100vh;
+                border-radius: 0;
+            }
+            
+            .message-content {
+                max-width: 85%;
+            }
+            
+            .stats {
+                flex-wrap: wrap;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🛡️ CyberIQ</h1>
+            <h1>🛡️ CyberIQ Demo</h1>
             <p>AI-Powered Threat Intelligence Platform</p>
-        </div>
-        
-        <div class="chat-container">
-            <textarea 
-                id="prompt" 
-                class="prompt-box" 
-                placeholder="Ask me about vulnerabilities...&#10;&#10;Examples:&#10;• Show me critical ransomware vulnerabilities from the last 30 days&#10;• What are the latest Microsoft vulnerabilities?&#10;• Find all critical severity KEVs&#10;• Show me Cisco vulnerabilities"></textarea>
-            
-            <div class="button-container">
-                <button class="search-btn" id="search-btn" onclick="search()">
-                    🔍 Analyze Threats
-                </button>
+            <div class="stats">
+                <div class="stat">691 MITRE Techniques</div>
+                <div class="stat">1,499 CISA KEVs</div>
+                <div class="stat">Azure • Splunk • Elastic</div>
             </div>
         </div>
-        
-        <div id="loading">
-            <div class="spinner"></div>
-            <p id="loading-text">Analyzing threat intelligence...</p>
+
+        <div class="chat-area" id="chatArea">
+            <div class="welcome">
+                <h2>Welcome to CyberIQ</h2>
+                <p>Ask me anything about threat intelligence, vulnerabilities, or attack techniques.</p>
+                <div class="examples">
+                    <strong>Try these:</strong><br>
+                    <span class="example-query" onclick="askQuestion('Show me top 5 critical KEVs with EPSS prioritization')">Top 5 + EPSS Priority</span>
+                    <span class="example-query" onclick="askQuestion('Show me ransomware KEVs')">Ransomware KEVs</span>
+                    <span class="example-query" onclick="askQuestion('Show me December 2025 KEVs')">December 2025</span>
+                </div>
+            </div>
         </div>
-        
-        <div id="results" class="results-container"></div>
-    </div>
-    
-    <script>
-        let currentAnalysisData = null;
-        
-        // Allow Enter to submit (Shift+Enter for new line)
-        document.getElementById('prompt').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                search();
-            }
-        });
-        
-        async function search() {
-            const promptText = document.getElementById('prompt').value.trim();
+
+        <div class="query-tabs-container" id="queryTabsContainer" style="display: none;">
+            <div class="tab-buttons">
+                <button class="tab-button active" onclick="switchTab('results')">Results</button>
+                <button class="tab-button" onclick="switchTab('kql')">Azure Sentinel (KQL)</button>
+                <button class="tab-button" onclick="switchTab('spl')">Splunk (SPL)</button>
+                <button class="tab-button" onclick="switchTab('eql')">Elasticsearch (EQL)</button>
+            </div>
             
-            if (!promptText) {
-                alert('Please enter a query');
-                return;
-            }
+            <div class="tab-content active" id="tab-results">
+                <div id="results-content"></div>
+            </div>
             
-            // Show loading
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('results').style.display = 'none';
-            document.getElementById('search-btn').disabled = true;
-            
-            const startTime = Date.now();
-            
-            try {
-                const response = await fetch('/api/query', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        query: promptText
-                    })
-                });
-                
-                if (!response.ok) {
-                    throw new Error('Search failed');
-                }
-                
-                const data = await response.json();
-                
-                // Calculate duration
-                const endTime = Date.now();
-                const duration = ((endTime - startTime) / 1000).toFixed(1);
-                
-                // Store data for query generation
-                currentAnalysisData = {
-                    prompt: promptText,
-                    vulnerabilities: data.vulnerabilities
-                };
-                
-                // Hide loading
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('search-btn').disabled = false;
-                
-                // Display results
-                displayResults(data, duration);
-                
-            } catch (error) {
-                console.error('Error:', error);
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('search-btn').disabled = false;
-                alert('Error searching. Please try again.');
-            }
-        }
-        
-        function displayResults(data, duration) {
-            const resultsDiv = document.getElementById('results');
-            
-            let html = `
-                <div class="performance-badge">⚡ Analysis completed in ${duration} seconds</div>
-                <div class="results-content" id="results-content">
-                    ${formatResponse(data.response)}
-                </div>
-                
-                <div class="query-generation-section">
-                    <h3>🎯 Generate SIEM Detection Query</h3>
-                    <p style="color: #666; margin-bottom: 15px;">Select your SIEM platform to generate a production-ready detection query:</p>
-                    
-                    <div class="query-options">
-                        <div class="query-option">
-                            <input type="radio" name="query-type" id="splunk" value="spl">
-                            <label for="splunk">
-                                <div class="query-option-icon">🔵</div>
-                                <div class="query-option-name">Splunk</div>
-                                <div class="query-option-desc">SPL Query</div>
-                            </label>
-                        </div>
-                        
-                        <div class="query-option">
-                            <input type="radio" name="query-type" id="elastic" value="eql">
-                            <label for="elastic">
-                                <div class="query-option-icon">🟡</div>
-                                <div class="query-option-name">Elastic</div>
-                                <div class="query-option-desc">EQL Query</div>
-                            </label>
-                        </div>
-                        
-                        <div class="query-option">
-                            <input type="radio" name="query-type" id="sentinel" value="kql">
-                            <label for="sentinel">
-                                <div class="query-option-icon">🔷</div>
-                                <div class="query-option-name">Azure Sentinel</div>
-                                <div class="query-option-desc">KQL Query</div>
-                            </label>
-                        </div>
-                    </div>
-                    
-                    <button class="generate-query-btn" id="generate-btn" onclick="generateQuery()">
-                        ✨ Generate Query
+            <div class="tab-content" id="tab-kql">
+                <div class="query-header">
+                    <div class="query-title">Azure Sentinel (KQL)</div>
+                    <button class="copy-btn" onclick="copyQuery('kql')">
+                        <span>📋 Copy Query</span>
                     </button>
-                    
-                    <p class="hint">💡 Query generation takes ~5-8 seconds</p>
-                    
-                    <div id="query-result" class="query-result"></div>
                 </div>
-            `;
+                <div class="query-code" id="query-kql">No query available yet.</div>
+            </div>
             
-            resultsDiv.innerHTML = html;
-            resultsDiv.style.display = 'block';
-            
-            // Enable generate button when radio selected
-            document.querySelectorAll('input[name="query-type"]').forEach(radio => {
-                radio.addEventListener('change', function() {
-                    document.getElementById('generate-btn').style.display = 'inline-block';
-                });
-            });
-        }
-        
-        async function generateQuery() {
-            const selectedType = document.querySelector('input[name="query-type"]:checked');
-            
-            if (!selectedType) {
-                alert('Please select a SIEM platform');
-                return;
-            }
-            
-            const queryType = selectedType.value;
-            const generateBtn = document.getElementById('generate-btn');
-            const queryResultDiv = document.getElementById('query-result');
-            
-            // Show loading state
-            generateBtn.disabled = true;
-            generateBtn.textContent = '⏳ Generating...';
-            queryResultDiv.innerHTML = '<p style="color: #666;">Generating query...</p>';
-            queryResultDiv.style.display = 'block';
-            
-            const startTime = Date.now();
-            
-            try {
-                const response = await fetch('/api/generate-query', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        query: currentAnalysisData.prompt,
-                        vulnerabilities: currentAnalysisData.vulnerabilities,
-                        query_type: queryType
-                    })
-                });
-                
-                if (!response.ok) {
-                    throw new Error('Query generation failed');
-                }
-                
-                const data = await response.json();
-                
-                // Calculate duration
-                const endTime = Date.now();
-                const duration = ((endTime - startTime) / 1000).toFixed(1);
-                
-                // Display query
-                displayQuery(data, queryType, duration);
-                
-                // Reset button
-                generateBtn.disabled = false;
-                generateBtn.textContent = '✨ Generate Query';
-                
-            } catch (error) {
-                console.error('Error:', error);
-                queryResultDiv.innerHTML = '<p style="color: red;">Error generating query. Please try again.</p>';
-                generateBtn.disabled = false;
-                generateBtn.textContent = '✨ Generate Query';
-            }
-        }
-        
-        function displayQuery(data, queryType, duration) {
-            const queryResultDiv = document.getElementById('query-result');
-            
-            const typeNames = {
-                'spl': 'Splunk (SPL)',
-                'eql': 'Elasticsearch (EQL)',
-                'kql': 'Azure Sentinel (KQL)'
-            };
-            
-            const typeName = typeNames[queryType];
-            
-            let html = `
-                <div class="performance-badge">⚡ Query generated in ${duration} seconds</div>
-                <div class="query-box">
-                    <h4>${typeName} Detection Query</h4>
-                    <button class="copy-button" onclick="copyQuery()">📋 Copy</button>
-                    <pre id="query-code">${escapeHtml(data.query)}</pre>
+            <div class="tab-content" id="tab-spl">
+                <div class="query-header">
+                    <div class="query-title">Splunk (SPL)</div>
+                    <button class="copy-btn" onclick="copyQuery('spl')">
+                        <span>📋 Copy Query</span>
+                    </button>
                 </div>
-            `;
+                <div class="query-code" id="query-spl">No query available yet.</div>
+            </div>
             
-            queryResultDiv.innerHTML = html;
-            queryResultDiv.style.display = 'block';
+            <div class="tab-content" id="tab-eql">
+                <div class="query-header">
+                    <div class="query-title">Elasticsearch (EQL)</div>
+                    <button class="copy-btn" onclick="copyQuery('eql')">
+                        <span>📋 Copy Query</span>
+                    </button>
+                </div>
+                <div class="query-code" id="query-eql">No query available yet.</div>
+            </div>
+        </div>
+
+        <div class="input-area">
+            <div class="input-container">
+                <input 
+                    type="text" 
+                    id="queryInput" 
+                    placeholder="Ask about threats, vulnerabilities, or attack techniques..."
+                    onkeypress="handleKeyPress(event)"
+                >
+                <button id="sendButton" onclick="sendQuery()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let isLoading = false;
+        let currentQueries = {
+            kql: null,
+            spl: null,
+            eql: null
+        };
+
+        function switchTab(tabName) {
+            // Remove active class from all buttons and contents
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            // Add active class to selected
+            event.target.classList.add('active');
+            document.getElementById('tab-' + tabName).classList.add('active');
         }
-        
-        function copyQuery() {
-            const queryCode = document.getElementById('query-code').textContent;
-            const button = event.target;
+
+        function copyQuery(queryType) {
+            const queryText = currentQueries[queryType];
+            if (!queryText) return;
             
-            navigator.clipboard.writeText(queryCode).then(() => {
-                button.textContent = '✅ Copied!';
-                button.classList.add('copied');
+            // Copy to clipboard
+            navigator.clipboard.writeText(queryText).then(() => {
+                // Show success feedback
+                const btn = event.target.closest('.copy-btn');
+                const originalHTML = btn.innerHTML;
+                btn.innerHTML = '<span>✅ Copied!</span>';
+                btn.classList.add('copied');
                 
                 setTimeout(() => {
-                    button.textContent = '📋 Copy';
-                    button.classList.remove('copied');
+                    btn.innerHTML = originalHTML;
+                    btn.classList.remove('copied');
                 }, 2000);
             });
         }
-        
-        function formatResponse(text) {
-            let html = text;
+
+        function extractQueries(text) {
+            const queries = {
+                kql: null,
+                spl: null,
+                eql: null
+            };
             
-            // Bold
-            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            // Extract KQL query
+            const kqlMatch = text.match(/\*\*Azure Sentinel \(KQL\):\*\*[\s\S]*?<pre><code>([\s\S]*?)<\/code><\/pre>/i);
+            if (kqlMatch) {
+                queries.kql = kqlMatch[1].trim();
+            }
             
-            // Priority labels
-            html = html.replace(/🔴 URGENT/g, '<span class="priority-urgent">🔴 URGENT</span>');
-            html = html.replace(/🟠 HIGH/g, '<span class="priority-high">🟠 HIGH</span>');
-            html = html.replace(/🟡 MEDIUM/g, '<span class="priority-medium">🟡 MEDIUM</span>');
-            html = html.replace(/🟢 LOW/g, '<span class="priority-low">🟢 LOW</span>');
+            // Extract SPL query
+            const splMatch = text.match(/\*\*Splunk \(SPL\):\*\*[\s\S]*?<pre><code>([\s\S]*?)<\/code><\/pre>/i);
+            if (splMatch) {
+                queries.spl = splMatch[1].trim();
+            }
             
-            // Line breaks
-            html = html.replace(/\n/g, '<br>');
+            // Extract EQL query
+            const eqlMatch = text.match(/\*\*Elasticsearch \(EQL\):\*\*[\s\S]*?<pre><code>([\s\S]*?)<\/code><\/pre>/i);
+            if (eqlMatch) {
+                queries.eql = eqlMatch[1].trim();
+            }
             
-            return html;
+            return queries;
         }
-        
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+
+        function updateQueryTabs(queries, cleanContent) {
+            currentQueries = queries;
+            
+            // Check if any queries exist
+            const hasQueries = queries.kql || queries.spl || queries.eql;
+            
+            if (hasQueries) {
+                // Show tabs container
+                document.getElementById('queryTabsContainer').style.display = 'block';
+                
+                // Populate Results tab with the clean content (table + analysis, no queries)
+                const resultsDiv = document.getElementById('results-content');
+                resultsDiv.innerHTML = cleanContent;
+                
+                // AGGRESSIVE CLEANUP: Remove ALL leading <br> tags from results
+                while (resultsDiv.firstChild && resultsDiv.firstChild.nodeName === 'BR') {
+                    console.log('Removing leading <br> from Results tab');
+                    resultsDiv.firstChild.remove();
+                }
+                
+                // Remove leading empty text nodes
+                while (resultsDiv.firstChild && 
+                       resultsDiv.firstChild.nodeType === 3 && 
+                       !resultsDiv.firstChild.textContent.trim()) {
+                    console.log('Removing leading empty text node from Results tab');
+                    resultsDiv.firstChild.remove();
+                }
+                
+                // Update each query tab
+                if (queries.kql) {
+                    document.getElementById('query-kql').textContent = queries.kql;
+                } else {
+                    document.getElementById('query-kql').innerHTML = '<span class="no-queries">No KQL query in this response</span>';
+                }
+                
+                if (queries.spl) {
+                    document.getElementById('query-spl').textContent = queries.spl;
+                } else {
+                    document.getElementById('query-spl').innerHTML = '<span class="no-queries">No SPL query in this response</span>';
+                }
+                
+                if (queries.eql) {
+                    document.getElementById('query-eql').textContent = queries.eql;
+                } else {
+                    document.getElementById('query-eql').innerHTML = '<span class="no-queries">No EQL query in this response</span>';
+                }
+                
+                // Default to Results tab
+                switchTabProgrammatic('results');
+            } else {
+                // Hide tabs if no queries
+                document.getElementById('queryTabsContainer').style.display = 'none';
+            }
+        }
+
+        function switchTabProgrammatic(tabName) {
+            // Remove active class from all
+            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            // Add active to selected
+            const buttons = document.querySelectorAll('.tab-button');
+            if (tabName === 'results') buttons[0].classList.add('active');
+            if (tabName === 'kql') buttons[1].classList.add('active');
+            if (tabName === 'spl') buttons[2].classList.add('active');
+            if (tabName === 'eql') buttons[3].classList.add('active');
+            
+            document.getElementById('tab-' + tabName).classList.add('active');
+        }
+
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter' && !isLoading) {
+                sendQuery();
+            }
+        }
+
+        function askQuestion(question) {
+            document.getElementById('queryInput').value = question;
+            sendQuery();
+        }
+
+        async function sendQuery() {
+            const input = document.getElementById('queryInput');
+            const query = input.value.trim();
+            
+            if (!query || isLoading) return;
+
+            isLoading = true;
+            const sendButton = document.getElementById('sendButton');
+            sendButton.disabled = true;
+            sendButton.textContent = 'Thinking...';
+
+            // Add user message
+            addMessage(query, 'user');
+            input.value = '';
+
+            // Add loading indicator
+            const loadingId = 'loading-' + Date.now();
+            addLoadingMessage(loadingId);
+
+            try {
+                const response = await fetch('/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ query: query })
+                });
+
+                // Remove loading indicator
+                removeLoadingMessage(loadingId);
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+
+                const data = await response.json();
+                addMessage(data.response, 'assistant');
+
+            } catch (error) {
+                removeLoadingMessage(loadingId);
+                addMessage('Sorry, there was an error processing your request. Please try again.', 'assistant', true);
+                console.error('Error:', error);
+            } finally {
+                isLoading = false;
+                sendButton.disabled = false;
+                sendButton.textContent = 'Send';
+            }
+        }
+
+        function formatResponse(text) {
+            console.log('=== FORMAT RESPONSE ===');
+            console.log('Text length:', text.length);
+            console.log('Has table:', text.includes('<table'));
+            
+            // Remove SIEM query sections from display (they'll appear in tabs instead)
+            // Remove everything after "**Azure Sentinel" or "**Splunk" or "**Elasticsearch"
+            const queryPatterns = [
+                /\*\*Azure Sentinel[\s\S]*/i,
+                /\*\*Splunk[\s\S]*/i,
+                /\*\*Elasticsearch[\s\S]*/i
+            ];
+            
+            let displayText = text;
+            for (const pattern of queryPatterns) {
+                const match = displayText.match(pattern);
+                if (match) {
+                    // Cut off everything from the first query header onwards
+                    displayText = displayText.substring(0, match.index).trim();
+                    break;
+                }
+            }
+            
+            // If response contains table, remove EVERYTHING before it
+            if (displayText.includes('<table')) {
+                const tableIndex = displayText.indexOf('<table');
+                if (tableIndex > 0) {
+                    console.log('Stripping', tableIndex, 'characters before table');
+                    displayText = displayText.substring(tableIndex);
+                }
+            }
+            
+            // DON'T convert newlines to <br> when we have HTML content (tables, etc.)
+            // Only convert for plain text responses
+            if (!displayText.includes('<table') && !displayText.includes('<pre>')) {
+                displayText = displayText.replace(/\n/g, '<br>');
+            }
+            
+            console.log('Final text length:', displayText.length);
+            console.log('First 100 chars:', displayText.substring(0, 100));
+            
+            return displayText;
+        }
+
+        function addMessage(text, sender, isError = false) {
+            const chatArea = document.getElementById('chatArea');
+            
+            // Remove welcome message if it exists
+            const welcome = chatArea.querySelector('.welcome');
+            if (welcome) {
+                welcome.remove();
+            }
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            if (isError) {
+                contentDiv.classList.add('error');
+            }
+            
+            // For assistant messages with tables/queries, show brief message and use tabs
+            if (sender === 'assistant' && !isError && text.includes('<table')) {
+                contentDiv.innerHTML = '<p style="color: #1e3a8a; font-weight: 600;">📊 Results ready! Check the tabs below to view the table and SIEM detection queries.</p>';
+            } else {
+                // Set the HTML content normally
+                contentDiv.innerHTML = formatResponse(text);
+                
+                // AGGRESSIVE CLEANUP: Remove ALL leading <br> tags after DOM is created
+                if (sender === 'assistant') {
+                    // Remove all leading <br> elements
+                    while (contentDiv.firstChild && contentDiv.firstChild.nodeName === 'BR') {
+                        console.log('Removing leading <br> from message');
+                        contentDiv.firstChild.remove();
+                    }
+                    
+                    // Also remove leading empty text nodes
+                    while (contentDiv.firstChild && 
+                           contentDiv.firstChild.nodeType === 3 && 
+                           !contentDiv.firstChild.textContent.trim()) {
+                        console.log('Removing leading empty text node');
+                        contentDiv.firstChild.remove();
+                    }
+                }
+            }
+            
+            messageDiv.appendChild(contentDiv);
+            chatArea.appendChild(messageDiv);
+            
+            // Extract and update query tabs for assistant responses
+            if (sender === 'assistant' && !isError && text.includes('<table')) {
+                const queries = extractQueries(text);
+                // Pass the formatted content to show in Results tab
+                const cleanContent = formatResponse(text);
+                updateQueryTabs(queries, cleanContent);
+            }
+            
+            // Scroll to bottom
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function addLoadingMessage(id) {
+            const chatArea = document.getElementById('chatArea');
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message assistant';
+            messageDiv.id = id;
+            
+            const loadingDiv = document.createElement('div');
+            loadingDiv.className = 'message-content loading';
+            loadingDiv.innerHTML = `
+                <span>Analyzing threat intelligence</span>
+                <div class="loading-dots">
+                    <div class="loading-dot"></div>
+                    <div class="loading-dot"></div>
+                    <div class="loading-dot"></div>
+                </div>
+            `;
+            
+            messageDiv.appendChild(loadingDiv);
+            chatArea.appendChild(messageDiv);
+            
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function removeLoadingMessage(id) {
+            const loadingMsg = document.getElementById(id);
+            if (loadingMsg) {
+                loadingMsg.remove();
+            }
         }
     </script>
 </body>
