@@ -1,22 +1,32 @@
 """
-CyberIQ API - With on-demand CVSS enrichment and table formatting
+Enhanced FastAPI Server - Multi-Source Cybersecurity Assistant
+Integrates MITRE ATT&CK, CVE, and CISA KEV data
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from typing import Optional, List, Dict
-import anthropic
+from typing import Optional
 import os
+import sys
 
-# Import loaders
-from vulnerability_loaders import load_kev_data, load_recent_cves
-from cvss_enricher import enrich_kevs_with_cvss
+# Import loaders and vector store
+sys.path.append('/app')
+from mitre_rag import MITREDataLoader
+from vulnerability_loaders import CVEDataLoader, CISAKEVLoader
+from enhanced_vector_store import EnhancedVectorStore
+import anthropic
 
-app = FastAPI(title="CyberIQ API")
+# Initialize FastAPI
+app = FastAPI(
+    title="Enhanced MITRE ATT&CK & CVE SOC Assistant",
+    description="AI-powered cybersecurity assistant with MITRE ATT&CK, CVE, and CISA KEV integration",
+    version="2.0.0"
+)
 
-# CORS middleware
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -25,329 +35,293 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global data storage
-mitre_data = []
-kev_data = []
-cve_data = []
+# Global variables
+vector_store = None
+anthropic_client = None
+is_initialized = False
+stats = {}
 
-# Initialize Anthropic client
-anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-if not anthropic_api_key:
-    raise ValueError("ANTHROPIC_API_KEY environment variable not set")
-
-client = anthropic.Anthropic(api_key=anthropic_api_key)
-
-
-class QueryRequest(BaseModel):
+# Request/Response models
+class ChatRequest(BaseModel):
     query: str
-
-
-class QueryResponse(BaseModel):
+    filter_type: Optional[str] = None  # 'mitre', 'cve', 'kev', or None for all
+    
+class ChatResponse(BaseModel):
     response: str
-    sources: Optional[List[Dict]] = []
+    sources: list = []
+    stats: dict = {}
 
+class HealthResponse(BaseModel):
+    status: str
+    data_loaded: dict
+    
+class RefreshRequest(BaseModel):
+    source: str  # 'cve' or 'kev' or 'all'
+    days: Optional[int] = 30  # For CVE: how many days back
 
+# Startup: Initialize all data sources
 @app.on_event("startup")
 async def startup_event():
-    """Load all data on startup"""
-    global mitre_data, kev_data, cve_data
+    """Initialize MITRE, CVE, and KEV data on startup"""
+    global vector_store, anthropic_client, is_initialized, stats
     
-    print("🚀 Starting CyberIQ API...")
+    print("🚀 Initializing Enhanced Cybersecurity Assistant...")
     
-    # Load MITRE ATT&CK data
     try:
-        print("📥 Loading MITRE ATT&CK data...")
-        from mitre_loaders import load_attack_data
-        mitre_data = load_attack_data()
-        print(f"✅ Loaded {len(mitre_data)} MITRE ATT&CK techniques")
+        # Check API key
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY not set")
+        
+        anthropic_client = anthropic.Anthropic(api_key=api_key)
+        
+        # Initialize vector store
+        print("🧠 Initializing unified vector database...")
+        vector_store = EnhancedVectorStore()
+        
+        # Load MITRE ATT&CK
+        print("\n📚 Loading MITRE ATT&CK Framework...")
+        mitre_loader = MITREDataLoader()
+        mitre_data = mitre_loader.download_attack_data()
+        mitre_techniques = mitre_loader.parse_techniques(mitre_data)
+        vector_store.add_items(mitre_techniques, 'mitre')
+        
+        # Load recent CVEs
+        print("\n🔒 Loading Recent CVEs...")
+        cve_loader = CVEDataLoader()
+        cve_data = cve_loader.download_recent_cves(days=90)
+        cves = cve_loader.parse_cves(cve_data)
+        vector_store.add_items(cves, 'cve')
+        
+        # Load CISA KEV
+        print("\n⚠️  Loading CISA Known Exploited Vulnerabilities...")
+        kev_loader = CISAKEVLoader()
+        kev_data = kev_loader.download_kev_catalog()
+        kevs = kev_loader.parse_kevs(kev_data)
+        vector_store.add_items(kevs, 'kev')
+        
+        # Get stats
+        stats = vector_store.get_stats()
+        print(f"\n✅ System ready!")
+        print(f"   - MITRE Techniques: {stats['mitre_techniques']}")
+        print(f"   - CVEs: {stats['cves']}")
+        print(f"   - KEVs: {stats['kevs']}")
+        print(f"   - Total items: {stats['total']}")
+        
+        is_initialized = True
+        
     except Exception as e:
-        print(f"⚠️  Error loading MITRE data: {str(e)}")
-        mitre_data = []
+        print(f"❌ Startup error: {e}")
+        import traceback
+        traceback.print_exc()
+        is_initialized = False
+
+# Health check
+@app.get("/health", response_model=HealthResponse)
+async def health_check():
+    """Check system status and data loaded"""
+    if not is_initialized:
+        raise HTTPException(status_code=503, detail="System not initialized")
     
-    # Load CISA KEV data (WITHOUT enrichment initially)
-    try:
-        print("⚠️  Loading CISA KEV data...")
-        kev_data = load_kev_data()
-        print(f"✅ Loaded {len(kev_data)} KEVs (CVSS enrichment on-demand)")
-    except Exception as e:
-        print(f"❌ Error loading KEV data: {str(e)}")
-        kev_data = []
-    
-    # Skip CVE loading
-    cve_data = []
-    
-    total_items = len(mitre_data) + len(kev_data)
-    print(f"🎉 CyberIQ ready with {total_items} threat intelligence items!")
+    return HealthResponse(
+        status="healthy",
+        data_loaded=stats
+    )
 
-
-@app.get("/", response_class=HTMLResponse)
-async def root():
-    """Serve the chat interface"""
-    try:
-        with open("index.html", "r") as f:
-            return f.read()
-    except FileNotFoundError:
-        return "<h1>CyberIQ</h1><p>Chat interface not found.</p>"
-
-
-@app.get("/api/status")
-async def status():
-    """API health check"""
-    return {
-        "status": "online",
-        "service": "CyberIQ Threat Intelligence Platform",
-        "data_loaded": {
-            "mitre_techniques": len(mitre_data),
-            "cisa_kevs": len(kev_data),
-            "total": len(mitre_data) + len(kev_data)
-        }
-    }
-
-
-def clean_response_spacing(response_text: str) -> str:
+# Enhanced chat endpoint
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
     """
-    Remove ALL content before HTML tables - table must appear first
+    Enhanced chat with multi-source knowledge
+    Searches across MITRE, CVE, and KEV data
     """
-    import re
+    if not is_initialized:
+        raise HTTPException(status_code=503, detail="System not initialized")
     
-    print("=== BACKEND CLEANING DEBUG ===")
-    print(f"Original text length: {len(response_text)}")
-    print(f"Contains <table>: {'<table' in response_text.lower()}")
-    print(f"First 200 chars: {response_text[:200]}")
+    if not request.query or len(request.query.strip()) == 0:
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
     
-    # Check if response contains a table
-    if '<table' not in response_text.lower():
-        print("No table found, returning original")
-        return response_text
-    
-    # Find the position of the first <table> tag
-    table_match = re.search(r'<table[^>]*>', response_text, re.IGNORECASE)
-    if not table_match:
-        print("Table tag not found by regex")
-        return response_text
-    
-    table_start = table_match.start()
-    print(f"Table starts at position: {table_start}")
-    
-    # Get everything before the table
-    before_table = response_text[:table_start]
-    print(f"Content before table length: {len(before_table)}")
-    print(f"Content before table: {before_table[:100]}...")
-    
-    # Get the table and everything after
-    table_and_after = response_text[table_start:]
-    
-    # AGGRESSIVE: Remove ALL content before table
-    # User confirmed this looks best
-    before_table = ''
-    
-    print(f"Cleaned response length: {len(table_and_after)}")
-    print(f"Cleaned response (first 200 chars): {table_and_after[:200]}")
-    
-    return before_table + table_and_after
-
-
-@app.post("/query", response_model=QueryResponse)
-async def query(request: QueryRequest):
-    """Process queries with on-demand CVSS enrichment and table formatting"""
     try:
-        query_lower = request.query.lower()
+        # Search vector database
+        results = vector_store.search(
+            request.query, 
+            n_results=10,
+            filter_type=request.filter_type
+        )
         
-        # Detect if user wants CVSS scores
-        wants_cvss = any(w in query_lower for w in ['cvss', 'score', 'severity', 'highest', 'critical', 'top'])
-        wants_top_n = any(w in query_lower for w in ['top', 'highest'])
+        # Build context from results
+        context = build_context(results)
         
-        # Extract number if asking for "top N"
-        import re
-        top_n_match = re.search(r'top\s+(\d+)', query_lower)
-        num_items = int(top_n_match.group(1)) if top_n_match else 10
-        num_items = min(num_items, 20)  # Cap at 20 to avoid rate limits
-        
-        # Build context
-        context = f"""You are CyberIQ with access to:
-- {len(mitre_data)} MITRE ATT&CK techniques
-- {len(kev_data)} CISA Known Exploited Vulnerabilities
+        # Build prompt for Claude
+        system_prompt = """You are an expert cybersecurity analyst and SOC (Security Operations Center) assistant.
+You have access to:
+- MITRE ATT&CK framework (attack techniques and tactics)
+- CVE database (Common Vulnerabilities and Exposures)
+- CISA KEV (Known Exploited Vulnerabilities - actively exploited in the wild)
 
-User Query: {request.query}
+When answering:
+- Cite specific technique IDs (T1234), CVE IDs (CVE-2024-1234), or mention if from CISA KEV
+- For vulnerabilities, mention CVSS scores and severity when available
+- PRIORITIZE KEV items - these are actively being exploited
+- Provide practical, actionable information for SOC analysts
+- Be concise but thorough"""
 
-!!CRITICAL!! SHOW THE HTML TABLE FIRST - NO PREAMBLE, NO INTRODUCTION, NO EXPLANATION BEFORE THE TABLE.
+        user_prompt = f"""Context from cybersecurity databases:
+{context}
 
-Start your response IMMEDIATELY with <table>. Analysis comes AFTER.
+User Question: {request.query}
 
-CORRECT FORMAT:
-<table style="width:100%; border-collapse: collapse; margin: 0 0 15px 0;">
-[table rows here]
-</table>
+Please answer based on the context provided above. Cite specific IDs where relevant."""
 
-Analysis text here.
-
-WRONG FORMAT (DO NOT DO THIS):
-Here are the results...
-Based on analysis...
-Let me explain...
-<table>
-
-HTML TABLE STRUCTURE:
-
-<table style="width:100%; border-collapse: collapse; margin: 0 0 15px 0;">
-<thead>
-<tr style="background: linear-gradient(135deg, #1e3a8a, #7c3aed); color: white;">
-<th style="padding: 12px; text-align: left; border: 1px solid #ddd;">CVE ID</th>
-<th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Vulnerability</th>
-<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">CVSS</th>
-<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Severity</th>
-<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Date Added</th>
-<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Ransomware</th>
-</tr>
-</thead>
-<tbody>
-<tr style="background: #f9fafb;">
-<td style="padding: 12px; border: 1px solid #ddd;">
-<a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">CVE-XXXX-XXXXX ↗</a>
-</td>
-<td style="padding: 12px; border: 1px solid #ddd;">Vulnerability name</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700; color: #dc2626;">9.8</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center;"><span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">CRITICAL</span></td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center;">2026-01-26</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center;">Yes</td>
-</tr>
-<tr style="background: white;">
-<td style="padding: 12px; border: 1px solid #ddd;">
-<a href="https://nvd.nist.gov/vuln/detail/CVE-YYYY-YYYYY" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">CVE-YYYY-YYYYY ↗</a>
-</td>
-<td style="padding: 12px; border: 1px solid #ddd;">Another vulnerability</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700; color: #ea580c;">8.5</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center;"><span style="background: #ea580c; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">HIGH</span></td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center;">2026-01-25</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center;">No</td>
-</tr>
-</tbody>
-</table>
-
-CVE LINKS: <a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">CVE-XXXX-XXXXX ↗</a>
-
-SEVERITY BADGES:
-CRITICAL: <span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">CRITICAL</span>
-HIGH: <span style="background: #ea580c; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">HIGH</span>
-MEDIUM: <span style="background: #f59e0b; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">MEDIUM</span>
-LOW: <span style="background: #84cc16; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">LOW</span>
-
-CVSS COLORS: 9.0-10.0=#dc2626, 7.0-8.9=#ea580c, 4.0-6.9=#f59e0b, <4.0=#84cc16
-
-Row backgrounds alternate: #f9fafb and white
-
-After table: Brief key findings (2-3 sentences max).
-
-"""
-        
-        # Smart search with CVSS enrichment if needed
-        relevant_items = search_data_smart(request.query)
-        
-        # If user wants CVSS and we have KEVs, enrich them
-        if wants_cvss and relevant_items and relevant_items[0].get('type') == 'kev':
-            print(f"🔍 Enriching top {num_items} KEVs with CVSS scores...")
-            
-            kevs_to_enrich = [item['data'] for item in relevant_items[:num_items] if item.get('type') == 'kev']
-            enriched_kevs = enrich_kevs_with_cvss(kevs_to_enrich, max_items=num_items)
-            
-            # Replace with enriched versions
-            for i, enriched in enumerate(enriched_kevs):
-                if i < len(relevant_items):
-                    relevant_items[i]['data'] = enriched
-            
-            print(f"✅ Enriched {len(enriched_kevs)} KEVs with CVSS scores")
-        
-        if relevant_items:
-            context += "Relevant Intelligence:\n\n"
-            for item in relevant_items[:num_items]:
-                context += format_item_detailed(item) + "\n\n"
-        
-        # Call Claude
-        message = client.messages.create(
+        # Call Claude API
+        message = anthropic_client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=2000,
-            messages=[{"role": "user", "content": context}]
+            max_tokens=1500,
+            system=system_prompt,
+            messages=[
+                {"role": "user", "content": user_prompt}
+            ]
         )
         
-        # Post-process response to remove excessive spacing before table
-        response_text = clean_response_spacing(message.content[0].text)
+        response_text = message.content[0].text
         
-        return QueryResponse(
+        # Extract source IDs from results
+        source_info = []
+        for result in results:
+            source = {
+                'id': result['id'],
+                'type': result['source_type'],
+            }
+            
+            if result['source_type'] == 'mitre':
+                source['name'] = result.get('name', '')
+            elif result['source_type'] == 'cve':
+                source['severity'] = result.get('cvss_severity', '')
+                source['score'] = result.get('cvss_score', '')
+            elif result['source_type'] == 'kev':
+                source['vendor'] = result.get('vendor', '')
+                source['product'] = result.get('product', '')
+                source['actively_exploited'] = True
+            
+            source_info.append(source)
+        
+        return ChatResponse(
             response=response_text,
-            sources=relevant_items[:5]
+            sources=source_info[:5],  # Top 5 sources
+            stats=stats
         )
+        
+    except Exception as e:
+        print(f"Error processing query: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+
+def build_context(results: list) -> str:
+    """Build context string from search results"""
+    if not results:
+        return "No relevant information found."
     
+    context_parts = []
+    
+    for i, result in enumerate(results, 1):
+        source_type = result['source_type'].upper()
+        
+        if result['source_type'] == 'mitre':
+            context_parts.append(
+                f"{i}. [MITRE ATT&CK] {result['name']} ({result['id']})\n"
+                f"   Tactics: {result.get('tactics', 'N/A')}\n"
+                f"   Description: {result['description']}\n"
+                f"   URL: {result.get('url', '')}"
+            )
+        elif result['source_type'] == 'cve':
+            severity = result.get('cvss_severity', 'UNKNOWN')
+            score = result.get('cvss_score', 'N/A')
+            context_parts.append(
+                f"{i}. [CVE] {result['id']} - Severity: {severity} (Score: {score})\n"
+                f"   Published: {result.get('published', 'N/A')}\n"
+                f"   Description: {result['description']}"
+            )
+        elif result['source_type'] == 'kev':
+            context_parts.append(
+                f"{i}. [⚠️ CISA KEV - ACTIVELY EXPLOITED] {result['id']}\n"
+                f"   Vendor: {result.get('vendor', 'N/A')}\n"
+                f"   Product: {result.get('product', 'N/A')}\n"
+                f"   Added to KEV: {result.get('date_added', 'N/A')}\n"
+                f"   Description: {result['description']}"
+            )
+    
+    return "\n\n".join(context_parts)
+
+# Search endpoint
+@app.get("/search")
+async def search(query: str, limit: int = 10, filter_type: str = None):
+    """Direct search without AI generation"""
+    if not is_initialized:
+        raise HTTPException(status_code=503, detail="System not initialized")
+    
+    try:
+        results = vector_store.search(query, n_results=limit, filter_type=filter_type)
+        return {"results": results, "count": len(results)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# Refresh data endpoint
+@app.post("/admin/refresh")
+async def refresh_data(request: RefreshRequest, background_tasks: BackgroundTasks):
+    """Refresh CVE or KEV data (admin endpoint)"""
+    if not is_initialized:
+        raise HTTPException(status_code=503, detail="System not initialized")
+    
+    # Run refresh in background
+    background_tasks.add_task(perform_refresh, request.source, request.days)
+    
+    return {"status": "refresh_started", "source": request.source}
 
-def search_data_smart(query: str) -> List[Dict]:
-    """Smart search with KEV prioritization"""
-    results = []
-    q = query.lower()
+async def perform_refresh(source: str, days: int):
+    """Background task to refresh data"""
+    global stats
     
-    # Detect intent
-    wants_recent = any(w in q for w in ['recent', 'latest', 'new'])
-    wants_top = 'top' in q
-    wants_highest = any(w in q for w in ['highest', 'critical', 'severe'])
-    wants_ransomware = 'ransomware' in q
-    wants_kev = any(w in q for w in ['kev', 'exploited', 'vulnerability', 'cve', 'cross'])
-    wants_mitre = any(w in q for w in ['technique', 'tactic', 'mitre', 'attack', 'phishing'])
-    
-    # KEV queries (most common)
-    if wants_kev or wants_recent or wants_top or wants_highest or not wants_mitre:
-        kevs = sorted(kev_data, key=lambda x: x.get('date_added', ''), reverse=True)
+    try:
+        if source in ['cve', 'all']:
+            print(f"🔄 Refreshing CVE data (last {days} days)...")
+            cve_loader = CVEDataLoader()
+            cve_data = cve_loader.download_recent_cves(days=days)
+            cves = cve_loader.parse_cves(cve_data)
+            vector_store.add_items(cves, 'cve')
         
-        if wants_ransomware:
-            kevs = [k for k in kevs if k.get('cisa_ransomware') or k.get('known_ransomware') == 'Known']
+        if source in ['kev', 'all']:
+            print("🔄 Refreshing CISA KEV data...")
+            kev_loader = CISAKEVLoader()
+            kev_data = kev_loader.download_kev_catalog()
+            kevs = kev_loader.parse_kevs(kev_data)
+            vector_store.add_items(kevs, 'kev')
         
-        # Return top results (will be enriched if CVSS requested)
-        for kev in kevs[:30]:  # Get more candidates
-            results.append({"type": "kev", "data": kev})
-    
-    # MITRE queries
-    elif wants_mitre:
-        for item in mitre_data[:20]:
-            if any(word in str(item).lower() for word in q.split() if len(word) > 3):
-                results.append({"type": "mitre", "data": item})
-                if len(results) >= 20:
-                    break
-    
-    # Default: recent KEVs
-    if not results:
-        recent = sorted(kev_data, key=lambda x: x.get('date_added', ''), reverse=True)[:20]
-        results = [{"type": "kev", "data": k} for k in recent]
-    
-    return results
-
-
-def format_item_detailed(item: Dict) -> str:
-    """Detailed formatting for Claude"""
-    itype = item.get("type")
-    data = item.get("data", {})
-    
-    if itype == "kev":
-        cvss = data.get('cvss_score', 0)
-        cvss_str = f"{cvss:.1f}" if cvss > 0 else "Pending"
+        # Update stats
+        stats = vector_store.get_stats()
+        print("✅ Refresh complete")
         
-        return f"""KEV {data.get('cve_id', 'N/A')}: {data.get('vulnerability_name', 'N/A')}
-Vendor/Product: {data.get('vendor_project', 'N/A')} {data.get('product', 'N/A')}
-Date Added: {data.get('date_added', 'N/A')}
-CVSS Score: {cvss_str}
-CVSS Severity: {data.get('cvss_severity', 'HIGH')}
-CWE: {data.get('cwe_id', 'N/A')}
-Ransomware: {'Yes' if (data.get('cisa_ransomware') or data.get('known_ransomware') == 'Known') else 'No'}
-Required Action: {data.get('required_action', 'N/A')}
-Due Date: {data.get('due_date', 'N/A')}
-Description: {data.get('short_description', 'N/A')[:200]}"""
-    
-    elif itype == "mitre":
-        return f"MITRE {data.get('technique_id', 'N/A')}: {data.get('technique_name', 'N/A')}\n{data.get('description', 'N/A')[:200]}"
-    
-    return str(data)[:200]
+    except Exception as e:
+        print(f"❌ Refresh error: {e}")
 
+# Serve frontend
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    """Serve the main HTML page"""
+    html_file = "/app/static/index.html"
+    
+    if os.path.exists(html_file):
+        with open(html_file, 'r') as f:
+            return HTMLResponse(content=f.read())
+    else:
+        return HTMLResponse(content="<h1>Enhanced MITRE ATT&CK + CVE + KEV Assistant</h1><p>Frontend not found. API docs at /docs</p>")
+
+# Mount static files
+try:
+    app.mount("/static", StaticFiles(directory="/app/static"), name="static")
+except RuntimeError:
+    pass  # Directory might not exist yet
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8080)
-    
+    uvicorn.run(app, host="0.0.0.0", port=8000)
