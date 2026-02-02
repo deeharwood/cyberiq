@@ -1,19 +1,34 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from anthropic import Anthropic
 import os
 import requests
-import json
 from datetime import datetime, timedelta
+from pydantic import BaseModel
+from typing import Optional
 
-app = Flask(__name__)
-CORS(app)
+app = FastAPI()
+
+# CORS configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Initialize Anthropic client
 client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 # Cache for EPSS data
 epss_cache = {}
+
+class QueryRequest(BaseModel):
+    vendor: Optional[str] = ""
+    date_filter: Optional[str] = ""
+    query: Optional[str] = ""
 
 def fetch_kev_data():
     """Fetch KEV data from CISA"""
@@ -115,58 +130,27 @@ def calculate_priority_label(cvss, epss):
     else:
         return "🟢 LOW"
 
-def filter_vulnerabilities(vulnerabilities, query_text):
-    """Filter vulnerabilities based on query text"""
-    if not query_text:
-        return vulnerabilities[:20]
-    
-    query_lower = query_text.lower()
-    
-    # Extract filters from query
-    vendor_filter = None
-    date_filter = None
-    severity_filter = None
-    
-    # Simple keyword extraction
-    if 'microsoft' in query_lower:
-        vendor_filter = 'microsoft'
-    elif 'cisco' in query_lower:
-        vendor_filter = 'cisco'
-    elif 'adobe' in query_lower:
-        vendor_filter = 'adobe'
-    elif 'apple' in query_lower:
-        vendor_filter = 'apple'
-    elif 'google' in query_lower:
-        vendor_filter = 'google'
-    
-    if 'last 7 days' in query_lower or 'past week' in query_lower:
-        date_filter = 7
-    elif 'last 30 days' in query_lower or 'past month' in query_lower:
-        date_filter = 30
-    elif 'last 90 days' in query_lower or 'past 90 days' in query_lower:
-        date_filter = 90
-    
-    if 'critical' in query_lower:
-        severity_filter = 'critical'
-    
-    # Filter
+def filter_vulnerabilities(vulnerabilities, vendor, date_filter, query_text):
+    """Filter vulnerabilities based on user input"""
     filtered = vulnerabilities
     
-    if vendor_filter:
-        filtered = [v for v in filtered if vendor_filter in v.get('vendorProject', '').lower()]
+    if vendor:
+        filtered = [v for v in filtered if vendor.lower() in v.get('vendorProject', '').lower()]
     
     if date_filter:
-        cutoff_date = datetime.now() - timedelta(days=date_filter)
+        days = int(date_filter)
+        cutoff_date = datetime.now() - timedelta(days=days)
         filtered = [v for v in filtered if datetime.strptime(v.get('dateAdded', '2000-01-01'), '%Y-%m-%d') > cutoff_date]
     
-    if not vendor_filter and not severity_filter:
+    if query_text:
+        query_lower = query_text.lower()
         filtered = [v for v in filtered if 
                    query_lower in v.get('vulnerabilityName', '').lower() or
                    query_lower in v.get('shortDescription', '').lower() or
                    query_lower in v.get('vendorProject', '').lower() or
                    query_lower in v.get('product', '').lower()]
     
-    return filtered[:20]
+    return filtered
 
 def enrich_vulnerability_data(vulnerabilities, cvss_data, epss_data):
     """Enrich vulnerability data with CVSS and EPSS scores"""
@@ -194,41 +178,38 @@ def enrich_vulnerability_data(vulnerabilities, cvss_data, epss_data):
     
     return enriched
 
-@app.route('/api/query', methods=['POST'])
-def query():
-    """
-    Main endpoint for threat intelligence analysis (NO query generation)
-    """
+@app.post("/api/query")
+async def query(request: QueryRequest):
+    """Main API endpoint for threat intelligence queries"""
     try:
-        data = request.get_json()
-        query_text = data.get('query', '')
+        vendor = request.vendor or ""
+        date_filter = request.date_filter or ""
+        query_text = request.query or ""
         
-        print(f"Query received: {query_text}")
+        print(f"Query received: vendor={vendor}, date={date_filter}, query={query_text}")
         
         # Fetch KEV data
         kev_data = fetch_kev_data()
         
         if not kev_data:
-            return jsonify({
-                'error': 'Unable to fetch KEV data from CISA'
-            }), 500
+            raise HTTPException(status_code=500, detail="Unable to fetch KEV data from CISA")
         
-        # Filter vulnerabilities based on query
-        filtered_data = filter_vulnerabilities(kev_data, query_text)
+        # Filter vulnerabilities
+        filtered_data = filter_vulnerabilities(kev_data, vendor, date_filter, query_text)
         
         if not filtered_data:
-            return jsonify({
-                'error': 'No vulnerabilities found matching your criteria'
-            }), 404
+            raise HTTPException(status_code=404, detail="No vulnerabilities found matching your criteria")
         
         print(f"Found {len(filtered_data)} matching vulnerabilities")
         
         # Get CVEs
-        cves = [vuln.get('cveID') for vuln in filtered_data]
+        cves = [vuln.get('cveID') for vuln in filtered_data[:50]]
         
         # Fetch CVSS and EPSS data
-        print("Fetching CVSS and EPSS data...")
+        print("Fetching CVSS data...")
         cvss_data = fetch_cvss_data(cves)
+        
+        print("Fetching EPSS data...")
         epss_data = fetch_epss_data(cves)
         
         # Enrich vulnerability data
@@ -238,68 +219,68 @@ def query():
         priority_order = {"🔴 URGENT": 0, "🟠 HIGH": 1, "🟡 MEDIUM": 2, "🟢 LOW": 3}
         enriched_data.sort(key=lambda x: priority_order.get(x['priority'], 4))
         
-        # Build context for Claude (analysis only, NO queries)
+        # Build context for Claude
+        import json
         context = f"""
 You are a cybersecurity threat intelligence analyst.
 
 Analyze these {len(enriched_data)} vulnerabilities from the CISA KEV catalog.
 
-User query: "{query_text}"
-
 Vulnerabilities:
-{json.dumps(enriched_data, indent=2)}
+{json.dumps(enriched_data[:20], indent=2)}
 
 Provide a concise threat intelligence analysis:
 1. Brief summary of the threat landscape (2-3 sentences)
-2. Top 3-5 most critical vulnerabilities with their priority labels (URGENT/HIGH/MEDIUM/LOW) and EPSS scores
+2. Top 3-5 most critical vulnerabilities with their priority labels and EPSS scores
 3. Key patterns or trends you observe
 4. Actionable recommendations for security teams
 
-Be concise and focus on actionable intelligence. Do NOT generate SIEM queries.
+Be concise and focus on actionable intelligence.
 """
         
-        print("Calling Claude API for analysis...")
+        print("Calling Claude API...")
         
-        # Use fast model with lower token count (no queries needed)
+        # Call Claude
         response = client.messages.create(
-            model="claude-sonnet-3-5-20241022-v2:0",
+            model="claude-sonnet-3-5-20241022",
             max_tokens=1500,
             messages=[{"role": "user", "content": context}]
         )
         
         response_text = response.content[0].text
         
-        print("Analysis complete")
+        print("Response received from Claude")
         
-        return jsonify({
+        return {
             'response': response_text,
-            'count': len(enriched_data),
-            'vulnerabilities': enriched_data  # Return for query generation later
-        })
+            'count': len(enriched_data)
+        }
         
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error in query endpoint: {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.route('/api/generate-query', methods=['POST'])
-def generate_query():
-    """
-    Separate endpoint for generating SIEM queries on demand
-    """
+class GenerateQueryRequest(BaseModel):
+    query: str
+    vulnerabilities: list
+    query_type: str
+
+@app.post("/api/generate-query")
+async def generate_query(request: GenerateQueryRequest):
+    """Generate SIEM detection query based on vulnerabilities"""
     try:
-        data = request.get_json()
-        query_text = data.get('query', '')
-        vulnerabilities = data.get('vulnerabilities', [])
-        query_type = data.get('query_type', 'spl')
+        query_text = request.query
+        vulnerabilities = request.vulnerabilities
+        query_type = request.query_type
         
         print(f"Generating {query_type} query for: {query_text}")
         
         if not vulnerabilities:
-            return jsonify({
-                'error': 'No vulnerability data provided'
-            }), 400
+            raise HTTPException(status_code=400, detail="No vulnerability data provided")
         
         # Build context for query generation
         query_type_names = {
@@ -310,6 +291,7 @@ def generate_query():
         
         query_name = query_type_names.get(query_type, 'Unknown')
         
+        import json
         context = f"""
 You are a cybersecurity detection engineer.
 
@@ -334,7 +316,7 @@ Output ONLY the query code, no explanation or markdown formatting.
         
         # Use standard model with more tokens for comprehensive query
         response = client.messages.create(
-            model="claude-sonnet-3-5-20241022-v2:0",
+            model="claude-sonnet-3-5-20241022",
             max_tokens=2000,
             messages=[{"role": "user", "content": context}]
         )
@@ -346,28 +328,20 @@ Output ONLY the query code, no explanation or markdown formatting.
         
         print("Query generation complete")
         
-        return jsonify({
+        return {
             'query': query_code,
-            'query_type': query_type
-        })
-        
-    except Exception as e:
-        print(f"Error in generate-query endpoint: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+            'query
 
-@app.route('/health', methods=['GET'])
-def health():
-    """Health check endpoint"""
-    return jsonify({'status': 'healthy'}), 200
-
-@app.route('/')
-def index():
+@app.get("/", response_class=HTMLResponse)
+async def index():
     """Serve the main HTML page"""
-    with open('index.html', 'r') as f:
-        return f.read()
+    try:
+        with open('index.html', 'r') as f:
+            return f.read()
+    except FileNotFoundError:
+        return "<h1>CyberIQ API</h1><p>API is running. Upload index.html to see the interface.</p>"
 
-if __name__ == '__main__':
-    port = int(os.getenv('PORT', 8080))
-    app.run(host='0.0.0.0', port=port, debug=False)
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
