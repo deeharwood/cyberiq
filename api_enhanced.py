@@ -13,7 +13,6 @@ import os
 # Import loaders
 from vulnerability_loaders import load_kev_data, load_recent_cves
 from cvss_enricher import enrich_kevs_with_cvss
-from epss_enricher import enrich_kevs_with_epss, get_epss_priority_label, get_epss_color
 
 app = FastAPI(title="CyberIQ API")
 
@@ -105,49 +104,6 @@ async def status():
     }
 
 
-def clean_response_spacing(response_text: str) -> str:
-    """
-    Remove ALL content before HTML tables - table must appear first
-    """
-    import re
-    
-    print("=== BACKEND CLEANING DEBUG ===")
-    print(f"Original text length: {len(response_text)}")
-    print(f"Contains <table>: {'<table' in response_text.lower()}")
-    print(f"First 200 chars: {response_text[:200]}")
-    
-    # Check if response contains a table
-    if '<table' not in response_text.lower():
-        print("No table found, returning original")
-        return response_text
-    
-    # Find the position of the first <table> tag
-    table_match = re.search(r'<table[^>]*>', response_text, re.IGNORECASE)
-    if not table_match:
-        print("Table tag not found by regex")
-        return response_text
-    
-    table_start = table_match.start()
-    print(f"Table starts at position: {table_start}")
-    
-    # Get everything before the table
-    before_table = response_text[:table_start]
-    print(f"Content before table length: {len(before_table)}")
-    print(f"Content before table: {before_table[:100]}...")
-    
-    # Get the table and everything after
-    table_and_after = response_text[table_start:]
-    
-    # AGGRESSIVE: Remove ALL content before table
-    # User confirmed this looks best
-    before_table = ''
-    
-    print(f"Cleaned response length: {len(table_and_after)}")
-    print(f"Cleaned response (first 200 chars): {table_and_after[:200]}")
-    
-    return before_table + table_and_after
-
-
 @app.post("/query", response_model=QueryResponse)
 async def query(request: QueryRequest):
     """Process queries with on-demand CVSS enrichment and table formatting"""
@@ -157,9 +113,6 @@ async def query(request: QueryRequest):
         # Detect if user wants CVSS scores
         wants_cvss = any(w in query_lower for w in ['cvss', 'score', 'severity', 'highest', 'critical', 'top'])
         wants_top_n = any(w in query_lower for w in ['top', 'highest'])
-        
-        # Detect if user wants EPSS scores (exploit prediction)
-        wants_epss = any(w in query_lower for w in ['epss', 'exploit prediction', 'exploitation', 'priority', 'prioritize'])
         
         # Extract number if asking for "top N"
         import re
@@ -174,76 +127,12 @@ async def query(request: QueryRequest):
 
 User Query: {request.query}
 
-SIEM QUERY GENERATION:
-ALWAYS provide detection queries for ALL THREE SIEMs when showing KEVs:
-- Azure Sentinel (KQL)
-- Splunk (SPL)  
-- Elasticsearch (EQL)
-
-The user interface has tabs to switch between queries, so always provide all three.
-
-IMPORTANT: If the user asks for KEVs from a specific time period (e.g., "December 2025", "2025", "last month"), 
-the system has already filtered the results to only show KEVs from that period. If no results are shown, 
-state clearly that no KEVs match the criteria for that time period.
-
-
-QUERY FORMAT:
-Each query should be in its own code block with a clear header like:
-
-**Azure Sentinel (KQL):**
-<pre><code>
-SecurityAlert
-| where TimeGenerated >= ago(7d)
-| where CVE has_any ("CVE-2026-1281")
-| project TimeGenerated, AlertName, CVE, Severity
-</code></pre>
-
-**Splunk (SPL):**
-<pre><code>
-index=security sourcetype=alert earliest=-7d
-| search CVE="CVE-2026-1281"
-| table _time, alert_name, CVE, severity
-</code></pre>
-
-**Elasticsearch (EQL):**
-<pre><code>
-sequence by host.name
-[security where vulnerability.cve == "CVE-2026-1281"]
-</code></pre>
-
-QUERY LANGUAGE BEST PRACTICES:
-
-KQL (Azure Sentinel):
-- Use "|" pipe operators
-- datetime format: datetime(2025-12-01) or ago(7d)
-- Multiple values: has_any(), in()
-- Tables: SecurityAlert, SecurityEvent, CommonSecurityLog, DeviceInfo
-
-SPL (Splunk):
-- Start with index= and sourcetype=
-- Time: earliest=-7d, latest=now
-- Boolean: OR, AND, NOT
-- Commands: search, stats, table, chart, sort, head, tail
-- Use "|" pipe between commands
-
-EQL (Elasticsearch):
-- Focus on event sequences
-- Field format: dot.notation (host.name, user.name, process.name)
-- Arrays: in ("val1", "val2")
-- Event categories: security, network, process, file
-- Common fields: vulnerability.cve, event.severity, event.category
-
 !!CRITICAL!! SHOW THE HTML TABLE FIRST - NO PREAMBLE, NO INTRODUCTION, NO EXPLANATION BEFORE THE TABLE.
 
 Start your response IMMEDIATELY with <table>. Analysis comes AFTER.
 
-Response structure:
-1. <table> (immediately)
-2. Brief analysis (2-3 sentences)
-3. Detection queries (conditional - based on what user requested)
-
 CORRECT FORMAT:
-<table style="width:100%; border-collapse: collapse; margin: 0 0 15px 0;">
+<table style="width:100%; border-collapse: collapse; margin: 5px 0 15px 0;">
 [table rows here]
 </table>
 
@@ -257,14 +146,12 @@ Let me explain...
 
 HTML TABLE STRUCTURE:
 
-<table style="width:100%; border-collapse: collapse; margin: 0 0 15px 0;">
+<table style="width:100%; border-collapse: collapse; margin: 5px 0 15px 0;">
 <thead>
 <tr style="background: linear-gradient(135deg, #1e3a8a, #7c3aed); color: white;">
 <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">CVE ID</th>
 <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Vulnerability</th>
 <th style="padding: 12px; text-align: center; border: 1px solid #ddd;">CVSS</th>
-<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">EPSS</th>
-<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Priority</th>
 <th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Severity</th>
 <th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Date Added</th>
 <th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Ransomware</th>
@@ -277,8 +164,6 @@ HTML TABLE STRUCTURE:
 </td>
 <td style="padding: 12px; border: 1px solid #ddd;">Vulnerability name</td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700; color: #dc2626;">9.8</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700;">95.4%</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center;"><span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">🔴 URGENT</span></td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;"><span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">CRITICAL</span></td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">2026-01-26</td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">Yes</td>
@@ -289,25 +174,12 @@ HTML TABLE STRUCTURE:
 </td>
 <td style="padding: 12px; border: 1px solid #ddd;">Another vulnerability</td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700; color: #ea580c;">8.5</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center; font-weight: 700;">12.3%</td>
-<td style="padding: 12px; border: 1px solid #ddd; text-align: center;"><span style="background: #f59e0b; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">🟡 MEDIUM</span></td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;"><span style="background: #ea580c; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">HIGH</span></td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">2026-01-25</td>
 <td style="padding: 12px; border: 1px solid #ddd; text-align: center;">No</td>
 </tr>
 </tbody>
 </table>
-
-EPSS (Exploit Prediction Scoring System):
-- Predicts probability of exploitation in next 30 days
-- Format: XX.X% (e.g., 95.4%, 12.3%, 2.1%)
-- High EPSS = High exploitation likelihood
-
-PRIORITY LABELS (based on EPSS):
-🔴 URGENT (EPSS ≥ 70%): <span style="background: #dc2626; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">🔴 URGENT</span>
-🟠 HIGH (EPSS 30-70%): <span style="background: #ea580c; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">🟠 HIGH</span>
-🟡 MEDIUM (EPSS 10-30%): <span style="background: #f59e0b; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">🟡 MEDIUM</span>
-🟢 LOW (EPSS < 10%): <span style="background: #84cc16; color: white; padding: 4px 12px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">🟢 LOW</span>
 
 CVE LINKS: <a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" rel="noopener noreferrer" style="color: #1e3a8a; font-weight: 600; text-decoration: none; border-bottom: 2px solid #7c3aed;">CVE-XXXX-XXXXX ↗</a>
 
@@ -328,12 +200,6 @@ After table: Brief key findings (2-3 sentences max).
         # Smart search with CVSS enrichment if needed
         relevant_items = search_data_smart(request.query)
         
-        # Check if date filtering was applied (look for empty results with date keywords)
-        has_date_ref = any(word in query_lower for word in ['december', 'november', 'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', '2024', '2025', '2026'])
-        
-        if not relevant_items and has_date_ref:
-            context += f"\n\nNo KEVs found matching the specified time period in the query."
-        
         # If user wants CVSS and we have KEVs, enrich them
         if wants_cvss and relevant_items and relevant_items[0].get('type') == 'kev':
             print(f"🔍 Enriching top {num_items} KEVs with CVSS scores...")
@@ -348,20 +214,6 @@ After table: Brief key findings (2-3 sentences max).
             
             print(f"✅ Enriched {len(enriched_kevs)} KEVs with CVSS scores")
         
-        # If user wants EPSS and we have KEVs, enrich them
-        if wants_epss and relevant_items and relevant_items[0].get('type') == 'kev':
-            print(f"🔍 Enriching top {num_items} KEVs with EPSS scores...")
-            
-            kevs_to_enrich = [item['data'] for item in relevant_items[:num_items] if item.get('type') == 'kev']
-            enriched_kevs = enrich_kevs_with_epss(kevs_to_enrich, max_items=num_items)
-            
-            # Replace with enriched versions
-            for i, enriched in enumerate(enriched_kevs):
-                if i < len(relevant_items):
-                    relevant_items[i]['data'] = enriched
-            
-            print(f"✅ Enriched {len(enriched_kevs)} KEVs with EPSS scores")
-        
         if relevant_items:
             context += "Relevant Intelligence:\n\n"
             for item in relevant_items[:num_items]:
@@ -370,15 +222,12 @@ After table: Brief key findings (2-3 sentences max).
         # Call Claude
         message = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=4000,  # Increased for 3 full SIEM queries (KQL, SPL, EQL)
+            max_tokens=2000,
             messages=[{"role": "user", "content": context}]
         )
         
-        # Post-process response to remove excessive spacing before table
-        response_text = clean_response_spacing(message.content[0].text)
-        
         return QueryResponse(
-            response=response_text,
+            response=message.content[0].text,
             sources=relevant_items[:5]
         )
     
@@ -387,10 +236,7 @@ After table: Brief key findings (2-3 sentences max).
 
 
 def search_data_smart(query: str) -> List[Dict]:
-    """Smart search with KEV prioritization and date filtering"""
-    import re
-    from datetime import datetime
-    
+    """Smart search with KEV prioritization"""
     results = []
     q = query.lower()
     
@@ -401,68 +247,11 @@ def search_data_smart(query: str) -> List[Dict]:
     wants_ransomware = 'ransomware' in q
     wants_kev = any(w in q for w in ['kev', 'exploited', 'vulnerability', 'cve', 'cross'])
     wants_mitre = any(w in q for w in ['technique', 'tactic', 'mitre', 'attack', 'phishing'])
-    wants_queries = any(w in q for w in ['kql', 'kusto', 'sentinel', 'azure', 'query', 'spl', 'splunk', 'eql', 'elasticsearch', 'elastic', 'detection', 'hunt', 'hunting'])
-    
-    # Parse date filters from query
-    date_filter_start = None
-    date_filter_end = None
-    
-    # Check for specific month/year patterns
-    month_map = {
-        'january': 1, 'february': 2, 'march': 3, 'april': 4,
-        'may': 5, 'june': 6, 'july': 7, 'august': 8,
-        'september': 9, 'october': 10, 'november': 11, 'december': 12,
-        'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'jun': 6,
-        'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
-    }
-    
-    # Look for "Month YYYY" pattern (e.g., "December 2025")
-    for month_name, month_num in month_map.items():
-        month_year_pattern = f"{month_name}\\s+(\\d{{4}})"
-        match = re.search(month_year_pattern, q, re.IGNORECASE)
-        if match:
-            year = int(match.group(1))
-            # Filter for entire month
-            date_filter_start = f"{year}-{month_num:02d}-01"
-            
-            # Calculate last day of month properly
-            if month_num in [1, 3, 5, 7, 8, 10, 12]:  # 31 days
-                last_day = 31
-            elif month_num in [4, 6, 9, 11]:  # 30 days
-                last_day = 30
-            else:  # February
-                last_day = 29  # Covering leap years
-            
-            date_filter_end = f"{year}-{month_num:02d}-{last_day}"
-            
-            print(f"📅 Date filter detected: {month_name.title()} {year}")
-            print(f"   Start: {date_filter_start}, End: {date_filter_end}")
-            break
-    
-    # Look for just year pattern (e.g., "2025")
-    if not date_filter_start:
-        year_match = re.search(r'\b(20\d{2})\b', q)
-        if year_match:
-            year = int(year_match.group(1))
-            date_filter_start = f"{year}-01-01"
-            date_filter_end = f"{year}-12-31"
-            print(f"📅 Year filter detected: {year}")
     
     # KEV queries (most common)
     if wants_kev or wants_recent or wants_top or wants_highest or not wants_mitre:
         kevs = sorted(kev_data, key=lambda x: x.get('date_added', ''), reverse=True)
         
-        # Apply date filter if detected
-        if date_filter_start and date_filter_end:
-            filtered_kevs = []
-            for k in kevs:
-                date_added = k.get('date_added', '')
-                if date_added and date_filter_start <= date_added <= date_filter_end:
-                    filtered_kevs.append(k)
-            print(f"   Filtered from {len(kevs)} to {len(filtered_kevs)} KEVs")
-            kevs = filtered_kevs
-        
-        # Apply ransomware filter
         if wants_ransomware:
             kevs = [k for k in kevs if k.get('cisa_ransomware') or k.get('known_ransomware') == 'Known']
         
@@ -495,33 +284,16 @@ def format_item_detailed(item: Dict) -> str:
         cvss = data.get('cvss_score', 0)
         cvss_str = f"{cvss:.1f}" if cvss > 0 else "Pending"
         
-        # Format EPSS if available
-        epss = data.get('epss_score', 0)
-        epss_str = f"{epss*100:.1f}%" if epss > 0 else "N/A"
-        epss_percentile = data.get('epss_percentile', 0)
-        priority_score = data.get('priority_score', 0)
-        
-        base_info = f"""KEV {data.get('cve_id', 'N/A')}: {data.get('vulnerability_name', 'N/A')}
+        return f"""KEV {data.get('cve_id', 'N/A')}: {data.get('vulnerability_name', 'N/A')}
 Vendor/Product: {data.get('vendor_project', 'N/A')} {data.get('product', 'N/A')}
 Date Added: {data.get('date_added', 'N/A')}
 CVSS Score: {cvss_str}
-CVSS Severity: {data.get('cvss_severity', 'HIGH')}"""
-        
-        # Add EPSS info if available
-        if epss > 0:
-            base_info += f"""
-EPSS Score: {epss_str} (Exploitation Probability)
-EPSS Percentile: {epss_percentile*100:.1f}%
-Priority Score: {priority_score:.2f} (CVSS × EPSS)"""
-        
-        base_info += f"""
+CVSS Severity: {data.get('cvss_severity', 'HIGH')}
 CWE: {data.get('cwe_id', 'N/A')}
 Ransomware: {'Yes' if (data.get('cisa_ransomware') or data.get('known_ransomware') == 'Known') else 'No'}
 Required Action: {data.get('required_action', 'N/A')}
 Due Date: {data.get('due_date', 'N/A')}
 Description: {data.get('short_description', 'N/A')[:200]}"""
-        
-        return base_info
     
     elif itype == "mitre":
         return f"MITRE {data.get('technique_id', 'N/A')}: {data.get('technique_name', 'N/A')}\n{data.get('description', 'N/A')[:200]}"
