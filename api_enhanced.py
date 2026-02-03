@@ -234,13 +234,14 @@ RESPONSE FORMAT:
 </tbody>
 </table>
 
-2. Brief analysis (2-3 sentences)
+2. Brief analysis (2-3 sentences) - put this IMMEDIATELY after the table with NO blank lines
 
 IMPORTANT:
 - Add border: 1px solid #ddd to ALL table cells
 - Use clickable CVE links: <a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" style="color: #667eea; font-weight: 600;">CVE-XXXX-XXXXX</a>
 - Color code CVSS scores: 9.0-10.0=#dc2626, 7.0-8.9=#ea580c, 4.0-6.9=#f59e0b
 - Show priority labels with emojis (🔴 URGENT, 🟠 HIGH, 🟡 MEDIUM, 🟢 LOW)
+- DO NOT add excessive blank lines or newlines
 - Keep it concise - NO SIEM queries in this response
 """
         
