@@ -264,73 +264,10 @@ Be concise and focus on actionable intelligence.
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-class GenerateQueryRequest(BaseModel):
-    query: str
-    vulnerabilities: list
-    query_type: str
-
-@app.post("/api/generate-query")
-async def generate_query(request: GenerateQueryRequest):
-    """Generate SIEM detection query based on vulnerabilities"""
-    try:
-        query_text = request.query
-        vulnerabilities = request.vulnerabilities
-        query_type = request.query_type
-        
-        print(f"Generating {query_type} query for: {query_text}")
-        
-        if not vulnerabilities:
-            raise HTTPException(status_code=400, detail="No vulnerability data provided")
-        
-        # Build context for query generation
-        query_type_names = {
-            'spl': 'Splunk (SPL)',
-            'kql': 'Azure Sentinel (KQL)',
-            'eql': 'Elasticsearch (EQL)'
-        }
-        
-        query_name = query_type_names.get(query_type, 'Unknown')
-        
-        import json
-        context = f"""
-You are a cybersecurity detection engineer.
-
-Based on these vulnerabilities from the CISA KEV catalog, generate a production-ready detection query.
-
-User query: "{query_text}"
-
-Top Vulnerabilities:
-{json.dumps(vulnerabilities[:10], indent=2)}
-
-Generate a comprehensive {query_name} detection query that:
-1. Detects exploitation attempts for these vulnerabilities
-2. Is production-ready and well-commented
-3. Includes multiple detection methods (process execution, network connections, file modifications, registry changes, etc.)
-4. Uses proper syntax for {query_name}
-5. Is optimized for performance
-
-Output ONLY the query code, no explanation or markdown formatting.
-"""
-        
-        print("Calling Claude API for query generation...")
-        
-        # Use standard model with more tokens for comprehensive query
-        response = client.messages.create(
-            model="claude-sonnet-3-5-20241022",
-            max_tokens=2000,
-            messages=[{"role": "user", "content": context}]
-        )
-        
-        query_code = response.content[0].text
-        
-        # Clean up any markdown formatting
-        query_code = query_code.replace('```spl', '').replace('```kql', '').replace('```eql', '').replace('```', '').strip()
-        
-        print("Query generation complete")
-        
-        return {
-            'query': query_code,
-            'query
+@app.get("/health")
+async def health():
+    """Health check endpoint"""
+    return {"status": "healthy"}
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
