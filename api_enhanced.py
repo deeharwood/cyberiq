@@ -241,7 +241,7 @@ Based on the user's query above, provide a concise threat intelligence analysis:
 Be concise and focus on answering the user's specific question.
 """
         
-        print("Calling Claude API...")
+        print("Calling Claude API...see if this works...")
         
         # Call Claude
         response = client.messages.create(
@@ -269,7 +269,7 @@ Be concise and focus on answering the user's specific question.
 
 @app.get("/health")
 async def health():
-    """Health check endpoint"""
+    """Health check endpoint to see if this works."""
     return {"status": "healthy"}
 
 @app.get("/", response_class=HTMLResponse)
