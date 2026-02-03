@@ -255,8 +255,12 @@ IMPORTANT:
         
         response_text = response.content[0].text
         
-        # Strip excessive leading whitespace/newlines
-        response_text = response_text.lstrip('\n\r\t ')
+        # Strip ALL leading and trailing whitespace
+        response_text = response_text.strip()
+        
+        # Remove excessive leading newlines
+        import re
+        response_text = re.sub(r'^\n+', '', response_text)
         
         return QueryResponse(
             response=response_text,
