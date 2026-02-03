@@ -214,50 +214,33 @@ Analyze these {len(enriched_data)} vulnerabilities from the CISA KEV catalog.
 Vulnerabilities:
 {json.dumps(enriched_data[:20], indent=2)}
 
-MANDATORY RESPONSE FORMAT:
+RESPONSE FORMAT:
 
-1. First, create an HTML table showing the top 5-10 vulnerabilities:
+1. Create an HTML table showing the top 5-10 vulnerabilities:
 
 <table style="width:100%; border-collapse: collapse; margin: 20px 0;">
 <thead>
 <tr style="background: linear-gradient(135deg, #667eea, #764ba2); color: white;">
-<th style="padding: 12px; text-align: left; border: 1px solid #ddd;">CVE ID</th>
-<th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Vulnerability</th>
-<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">CVSS</th>
-<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">EPSS</th>
-<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Priority</th>
-<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Date Added</th>
+<th style="padding: 12px; text-align: left;">CVE ID</th>
+<th style="padding: 12px; text-align: left;">Vulnerability</th>
+<th style="padding: 12px; text-align: center;">CVSS</th>
+<th style="padding: 12px; text-align: center;">EPSS</th>
+<th style="padding: 12px; text-align: center;">Priority</th>
+<th style="padding: 12px; text-align: center;">Date Added</th>
 </tr>
 </thead>
 <tbody>
-<!-- Add rows for each vulnerability -->
+[rows with vulnerability data]
 </tbody>
 </table>
 
-2. Then provide brief analysis (2-3 sentences)
-
-3. ALWAYS provide detection queries for ALL THREE SIEMs:
-
-**Azure Sentinel (KQL):**
-```kql
-[Full KQL query here]
-```
-
-**Splunk (SPL):**
-```spl
-[Full SPL query here]
-```
-
-**Elasticsearch (EQL):**
-```eql
-[Full EQL query here]
-```
+2. Brief analysis (2-3 sentences)
 
 IMPORTANT:
 - Use clickable CVE links: <a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" style="color: #667eea; font-weight: 600;">CVE-XXXX-XXXXX</a>
 - Color code CVSS scores: 9.0-10.0=#dc2626, 7.0-8.9=#ea580c, 4.0-6.9=#f59e0b
-- Show priority labels with emojis
-- ALWAYS include all 3 SIEM queries - this is a CORE FEATURE
+- Show priority labels with emojis (🔴 URGENT, 🟠 HIGH, 🟡 MEDIUM, 🟢 LOW)
+- Keep it concise - NO SIEM queries in this response
 """
         
         print("Calling Claude API...")
@@ -265,11 +248,14 @@ IMPORTANT:
         # Call Claude
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=4000,  # Increased for tables + 3 queries
+            max_tokens=2000,  # Reduced - no queries needed!
             messages=[{"role": "user", "content": context}]
         )
         
         response_text = response.content[0].text
+        
+        # Strip excessive leading whitespace/newlines
+        response_text = response_text.lstrip('\n\r\t ')
         
         return QueryResponse(
             response=response_text,
@@ -280,6 +266,66 @@ IMPORTANT:
         raise
     except Exception as e:
         print(f"Error in query endpoint: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/generate-queries")
+async def generate_queries(request: QueryRequest):
+    """Generate SIEM detection queries for specific vulnerabilities"""
+    try:
+        print(f"Generate queries request: {request.query}")
+        
+        # Fetch KEV data
+        kev_data = fetch_kev_data()
+        
+        # Filter vulnerabilities
+        filtered_data = filter_vulnerabilities(kev_data, request.vendor, request.date_filter, "")
+        
+        if not filtered_data:
+            raise HTTPException(status_code=404, detail="No vulnerabilities found")
+        
+        # Get CVEs
+        cves = [vuln.get('cveID') for vuln in filtered_data[:10]]
+        
+        # Build context for SIEM queries
+        context = f"""
+Generate detection queries for these CVEs from the CISA KEV catalog:
+{', '.join(cves)}
+
+Create production-ready detection queries for ALL THREE SIEMs:
+
+**Azure Sentinel (KQL):**
+```kql
+[Comprehensive KQL query for Azure Sentinel]
+```
+
+**Splunk (SPL):**
+```spl
+[Comprehensive SPL query for Splunk]
+```
+
+**Elasticsearch (EQL):**
+```eql
+[Comprehensive EQL query for Elasticsearch]
+```
+
+Make the queries:
+- Production-ready and tested
+- Cover authentication, process execution, network connections, and file operations
+- Include relevant CVE indicators
+- Be copy-paste ready
+"""
+        
+        # Call Claude
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=3000,
+            messages=[{"role": "user", "content": context}]
+        )
+        
+        return {"queries": response.content[0].text}
+        
+    except Exception as e:
+        print(f"Error generating queries: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
