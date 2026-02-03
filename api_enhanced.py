@@ -194,8 +194,9 @@ async def query(request: QueryRequest):
         if not kev_data:
             raise HTTPException(status_code=500, detail="Unable to fetch KEV data from CISA")
         
-        # Filter vulnerabilities
-        filtered_data = filter_vulnerabilities(kev_data, vendor, date_filter, query_text)
+        # Filter vulnerabilities by vendor and date only
+        # Don't filter by query_text - that's the question for Claude!
+        filtered_data = filter_vulnerabilities(kev_data, vendor, date_filter, "")
         
         if not filtered_data:
             raise HTTPException(status_code=404, detail="No vulnerabilities found matching your criteria")
@@ -224,18 +225,20 @@ async def query(request: QueryRequest):
         context = f"""
 You are a cybersecurity threat intelligence analyst.
 
+User Query: "{query_text}"
+
 Analyze these {len(enriched_data)} vulnerabilities from the CISA KEV catalog.
 
 Vulnerabilities:
 {json.dumps(enriched_data[:20], indent=2)}
 
-Provide a concise threat intelligence analysis:
-1. Brief summary of the threat landscape (2-3 sentences)
-2. Top 3-5 most critical vulnerabilities with their priority labels and EPSS scores
+Based on the user's query above, provide a concise threat intelligence analysis:
+1. Brief summary addressing their specific question (2-3 sentences)
+2. Top 3-5 most relevant vulnerabilities with their priority labels and EPSS scores
 3. Key patterns or trends you observe
 4. Actionable recommendations for security teams
 
-Be concise and focus on actionable intelligence.
+Be concise and focus on answering the user's specific question.
 """
         
         print("Calling Claude API...")
