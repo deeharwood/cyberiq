@@ -218,25 +218,26 @@ RESPONSE FORMAT:
 
 1. Create an HTML table showing the top 5-10 vulnerabilities:
 
-<table style="width:100%; border-collapse: collapse; margin: 20px 0;">
+<table style="width:100%; border-collapse: collapse; margin: 20px 0; border: 1px solid #ddd;">
 <thead>
 <tr style="background: linear-gradient(135deg, #667eea, #764ba2); color: white;">
-<th style="padding: 12px; text-align: left;">CVE ID</th>
-<th style="padding: 12px; text-align: left;">Vulnerability</th>
-<th style="padding: 12px; text-align: center;">CVSS</th>
-<th style="padding: 12px; text-align: center;">EPSS</th>
-<th style="padding: 12px; text-align: center;">Priority</th>
-<th style="padding: 12px; text-align: center;">Date Added</th>
+<th style="padding: 12px; text-align: left; border: 1px solid #ddd;">CVE ID</th>
+<th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Vulnerability</th>
+<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">CVSS</th>
+<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">EPSS</th>
+<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Priority</th>
+<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Date Added</th>
 </tr>
 </thead>
 <tbody>
-[rows with vulnerability data]
+[rows with border: 1px solid #ddd on each cell]
 </tbody>
 </table>
 
 2. Brief analysis (2-3 sentences)
 
 IMPORTANT:
+- Add border: 1px solid #ddd to ALL table cells
 - Use clickable CVE links: <a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" style="color: #667eea; font-weight: 600;">CVE-XXXX-XXXXX</a>
 - Color code CVSS scores: 9.0-10.0=#dc2626, 7.0-8.9=#ea580c, 4.0-6.9=#f59e0b
 - Show priority labels with emojis (🔴 URGENT, 🟠 HIGH, 🟡 MEDIUM, 🟢 LOW)
@@ -326,6 +327,64 @@ Make the queries:
         
     except Exception as e:
         print(f"Error generating queries: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/generate-single-query")
+async def generate_single_query(request: dict):
+    """Generate a single SIEM query based on query type"""
+    try:
+        query_type = request.get('query_type', 'kql')
+        last_query = request.get('query', '')
+        
+        print(f"Generate single query: {query_type}")
+        
+        # Fetch KEV data
+        kev_data = fetch_kev_data()
+        filtered_data = filter_vulnerabilities(kev_data, '', '', "")
+        
+        if not filtered_data:
+            raise HTTPException(status_code=404, detail="No vulnerabilities found")
+        
+        # Get CVEs
+        cves = [vuln.get('cveID') for vuln in filtered_data[:10]]
+        
+        # Build context based on query type
+        if query_type == 'kql':
+            platform = "Azure Sentinel (KQL)"
+            language = "KQL"
+        elif query_type == 'spl':
+            platform = "Splunk (SPL)"
+            language = "SPL"
+        else:
+            platform = "Elasticsearch (EQL)"
+            language = "EQL"
+        
+        context = f"""
+Generate a production-ready detection query for {platform}.
+
+Target CVEs from CISA KEV catalog:
+{', '.join(cves[:10])}
+
+Create a comprehensive {language} query that:
+- Detects exploitation attempts for these CVEs
+- Covers authentication anomalies, process execution, network connections, file operations
+- Is production-ready and copy-paste ready
+- Includes CVE-specific indicators
+
+Output ONLY the query code, no explanation.
+"""
+        
+        # Call Claude
+        response = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=2000,
+            messages=[{"role": "user", "content": context}]
+        )
+        
+        return {"query": response.content[0].text.strip()}
+        
+    except Exception as e:
+        print(f"Error generating query: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

@@ -134,6 +134,7 @@
         <div class="suggestions">
             <button class="suggestion-btn" onclick="fillQuery('Top 5 KEVs by CVSS')">Top 5 KEVs by CVSS</button>
             <button class="suggestion-btn" onclick="fillQuery('Ransomware KEVs')">Ransomware KEVs</button>
+            <button class="suggestion-btn" onclick="fillQuery('Microsoft vulnerabilities')">Microsoft KEVs</button>
         </div>
         <div class="input-container">
             <input type="text" class="query-input" id="query-input" placeholder="Ask about threats..." onkeypress="if(event.key==='Enter')search()">
@@ -205,82 +206,155 @@
     async function generateQueries() {
         if (!lastQuery) { alert('Please run a query first'); return; }
         
-        const btn = document.getElementById('generate-btn');
-        btn.disabled = true;
-        btn.textContent = '⏳ Generating...';
+        // Open new tab with query selector
+        const tab = window.open('about:blank', '_blank');
         
-        try {
-            const response = await fetch('/api/generate-queries', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: lastQuery, vendor: '', date_filter: '' })
-            });
-            
-            if (!response.ok) throw new Error('Failed');
-            
-            const data = await response.json();
-            const win = window.open('', 'Queries', 'width=1000,height=800');
-            const html = buildQueriesPage(data.queries);
-            win.document.write(html);
-            win.document.close();
-            
-            btn.disabled = false;
-            btn.textContent = '🔍 Generate SIEM Queries';
-        } catch (error) {
-            alert('Error generating queries');
-            btn.disabled = false;
-            btn.textContent = '🔍 Generate SIEM Queries';
+        const html = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SIEM Detection Queries</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; background: #f7fafc; margin: 0; }
+        h1 { color: #2d3748; margin-bottom: 10px; }
+        .subtitle { color: #718096; margin-bottom: 30px; }
+        .button-container { display: flex; gap: 15px; margin-bottom: 30px; flex-wrap: wrap; }
+        .query-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
         }
+        .query-btn:hover { transform: translateY(-2px); }
+        .query-btn:disabled { background: #cbd5e0; cursor: not-allowed; }
+        .result-section { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: none; }
+        .result-section.show { display: block; }
+        .query-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        h2 { color: #667eea; margin: 0; }
+        .copy-btn { background: #667eea; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; }
+        .copy-btn:hover { background: #5568d3; }
+        .copy-btn.copied { background: #48bb78; }
+        pre { background: #1e1e1e; color: #d4d4d4; padding: 20px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.6; white-space: pre-wrap; margin: 0; }
+        .loading { text-align: center; padding: 40px; color: #718096; display: none; }
+        .loading.show { display: block; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #667eea; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <h1>🔍 SIEM Detection Queries</h1>
+    <p class="subtitle">Select which query type to generate:</p>
+    
+    <div class="button-container">
+        <button class="query-btn" onclick="generateQuery('kql')">Azure Sentinel (KQL)</button>
+        <button class="query-btn" onclick="generateQuery('spl')">Splunk (SPL)</button>
+        <button class="query-btn" onclick="generateQuery('eql')">Elasticsearch (EQL)</button>
+    </div>
+    
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>Generating query...</p>
+    </div>
+    
+    <div class="result-section" id="result">
+        <div class="query-header">
+            <h2 id="query-title"></h2>
+            <button class="copy-btn" id="copy-btn" onclick="copyQuery()">📋 Copy Query</button>
+        </div>
+        <pre id="query-code"></pre>
+    </div>
+    
+    <script>
+        let currentQuery = '';
+        
+        async function generateQuery(type) {
+            const titles = {
+                'kql': 'Azure Sentinel (KQL)',
+                'spl': 'Splunk (SPL)',
+                'eql': 'Elasticsearch (EQL)'
+            };
+            
+            // Show loading
+            document.getElementById('loading').classList.add('show');
+            document.getElementById('result').classList.remove('show');
+            
+            // Disable buttons
+            document.querySelectorAll('.query-btn').forEach(btn => btn.disabled = true);
+            
+            try {
+                const response = await fetch(window.opener.location.origin + '/api/generate-single-query', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        query_type: type,
+                        query: '${lastQuery}'
+                    })
+                });
+                
+                if (!response.ok) throw new Error('Failed to generate query');
+                
+                const data = await response.json();
+                currentQuery = data.query;
+                
+                // Show result
+                document.getElementById('loading').classList.remove('show');
+                document.getElementById('result').classList.add('show');
+                document.getElementById('query-title').textContent = titles[type];
+                document.getElementById('query-code').textContent = currentQuery;
+                
+            } catch (error) {
+                alert('Error generating query: ' + error.message);
+            } finally {
+                // Re-enable buttons
+                document.querySelectorAll('.query-btn').forEach(btn => btn.disabled = false);
+            }
+        }
+        
+        function copyQuery() {
+            navigator.clipboard.writeText(currentQuery).then(() => {
+                const btn = document.getElementById('copy-btn');
+                const originalText = btn.textContent;
+                btn.textContent = '✅ Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.classList.remove('copied');
+                }, 2000);
+            });
+        }
+    </script>
+</body>
+</html>
+        `;
+        
+        tab.document.write(html);
+        tab.document.close();
     }
     
-    function buildQueriesPage(text) {
-        let html = '<!DOCTYPE html><html><head><title>SIEM Queries</title><style>';
-        html += 'body{font-family:sans-serif;padding:40px;background:#f7fafc}';
-        html += 'h1{color:#2d3748;margin-bottom:30px}';
-        html += '.section{background:white;padding:30px;border-radius:12px;margin-bottom:30px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}';
-        html += '.header{display:flex;justify-content:space-between;margin-bottom:20px}';
-        html += 'h2{color:#667eea;margin:0}';
-        html += 'button{background:#667eea;color:white;border:none;padding:10px 20px;border-radius:8px;cursor:pointer;font-weight:600}';
-        html += 'button:hover{background:#5568d3}';
-        html += 'pre{background:#1e1e1e;color:#d4d4d4;padding:20px;border-radius:8px;overflow-x:auto;font-size:13px;line-height:1.6;white-space:pre-wrap}';
-        html += '</style></head><body><h1>🔍 SIEM Detection Queries</h1>';
-        
-        const kql = text.match(/\*\*Azure Sentinel \(KQL\):\*\*[\s\S]*?```(?:kql)?[\s\n]*([\s\S]*?)```/i);
-        if (kql) {
-            const escaped = kql[1].trim().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-            html += '<div class="section"><div class="header"><h2>Azure Sentinel (KQL)</h2>';
-            html += '<button onclick="navigator.clipboard.writeText(atob(\'' + btoa(kql[1].trim()) + '\'))">📋 Copy</button></div>';
-            html += '<pre>' + escaped + '</pre></div>';
-        }
-        
-        const spl = text.match(/\*\*Splunk \(SPL\):\*\*[\s\S]*?```(?:spl)?[\s\n]*([\s\S]*?)```/i);
-        if (spl) {
-            const escaped = spl[1].trim().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-            html += '<div class="section"><div class="header"><h2>Splunk (SPL)</h2>';
-            html += '<button onclick="navigator.clipboard.writeText(atob(\'' + btoa(spl[1].trim()) + '\'))">📋 Copy</button></div>';
-            html += '<pre>' + escaped + '</pre></div>';
-        }
-        
-        const eql = text.match(/\*\*Elasticsearch \(EQL\):\*\*[\s\S]*?```(?:eql)?[\s\n]*([\s\S]*?)```/i);
-        if (eql) {
-            const escaped = eql[1].trim().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-            html += '<div class="section"><div class="header"><h2>Elasticsearch (EQL)</h2>';
-            html += '<button onclick="navigator.clipboard.writeText(atob(\'' + btoa(eql[1].trim()) + '\'))">📋 Copy</button></div>';
-            html += '<pre>' + escaped + '</pre></div>';
-        }
-        
-        html += '</body></html>';
-        return html;
-    }
     
     function formatResponse(text) {
         let html = text.trim();
+        
+        // Remove excessive newlines (more than 2 consecutive)
+        html = html.replace(/\n{3,}/g, '\n\n');
+        
+        // Bold
         html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        
+        // Priority labels
         html = html.replace(/🔴 URGENT/g, '<span style="color:#dc2626;font-weight:bold">🔴 URGENT</span>');
         html = html.replace(/🟠 HIGH/g, '<span style="color:#ea580c;font-weight:bold">🟠 HIGH</span>');
         html = html.replace(/🟡 MEDIUM/g, '<span style="color:#f59e0b;font-weight:bold">🟡 MEDIUM</span>');
         html = html.replace(/🟢 LOW/g, '<span style="color:#48bb78;font-weight:bold">🟢 LOW</span>');
+        
+        // Line breaks
         html = html.replace(/\n/g, '<br>');
+        
         return html;
     }
     </script>
