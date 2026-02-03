@@ -245,7 +245,7 @@ Be concise and focus on answering the user's specific question.
         
         # Call Claude
         response = client.messages.create(
-            model="claude-sonnet-4-5-20250929",
+            model="claude-sonnet-4-20250514",
             max_tokens=1500,
             messages=[{"role": "user", "content": context}]
         )
