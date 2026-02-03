@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CyberIQ Demo - AI-Powered Threat Intelligence Platform</title>
+    <title>CyberIQ Demo - AI-Powered Threat Intelligence</title>
     <style>
         * {
             margin: 0;
@@ -12,12 +12,9 @@
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
             padding: 40px 20px;
         }
         
@@ -31,19 +28,10 @@
             font-size: 42px;
             font-weight: 700;
             margin-bottom: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 15px;
-        }
-        
-        .logo-icon {
-            font-size: 48px;
         }
         
         .tagline {
             font-size: 18px;
-            font-weight: 400;
             opacity: 0.95;
         }
         
@@ -73,6 +61,7 @@
             padding: 60px 50px;
             max-width: 750px;
             width: 100%;
+            margin: 0 auto 30px;
             text-align: center;
         }
         
@@ -136,17 +125,12 @@
             border: 2px solid #e2e8f0;
             border-radius: 12px;
             font-size: 15px;
-            color: #2d3748;
             outline: none;
             transition: border-color 0.2s;
         }
         
         .query-input:focus {
             border-color: #667eea;
-        }
-        
-        .query-input::placeholder {
-            color: #a0aec0;
         }
         
         .send-btn {
@@ -158,22 +142,16 @@
             font-size: 15px;
             font-weight: 600;
             cursor: pointer;
-            transition: transform 0.2s, box-shadow 0.2s;
+            transition: transform 0.2s;
         }
         
         .send-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
-        }
-        
-        .send-btn:active {
-            transform: translateY(0);
         }
         
         .send-btn:disabled {
             background: #cbd5e0;
             cursor: not-allowed;
-            transform: none;
         }
         
         .loading {
@@ -210,7 +188,7 @@
             padding: 40px;
             max-width: 900px;
             width: 100%;
-            margin-top: 30px;
+            margin: 0 auto;
         }
         
         .results-header {
@@ -241,28 +219,7 @@
             font-size: 15px;
         }
         
-        .priority-urgent { color: #f56565; font-weight: bold; }
-        .priority-high { color: #ed8936; font-weight: bold; }
-        .priority-medium { color: #ecc94b; font-weight: bold; }
-        .priority-low { color: #48bb78; font-weight: bold; }
-        
         @media (max-width: 768px) {
-            .logo {
-                font-size: 32px;
-            }
-            
-            .main-card {
-                padding: 40px 30px;
-            }
-            
-            .welcome-title {
-                font-size: 28px;
-            }
-            
-            .suggestions {
-                flex-direction: column;
-            }
-            
             .input-container {
                 flex-direction: column;
             }
@@ -275,10 +232,7 @@
 </head>
 <body>
     <div class="header">
-        <div class="logo">
-            <span class="logo-icon">🛡️</span>
-            <span>CyberIQ Demo</span>
-        </div>
+        <div class="logo">🛡️ CyberIQ Demo</div>
         <div class="tagline">AI-Powered Threat Intelligence Platform</div>
     </div>
     
@@ -398,10 +352,10 @@
             html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
             
             // Priority labels
-            html = html.replace(/🔴 URGENT/g, '<span class="priority-urgent">🔴 URGENT</span>');
-            html = html.replace(/🟠 HIGH/g, '<span class="priority-high">🟠 HIGH</span>');
-            html = html.replace(/🟡 MEDIUM/g, '<span class="priority-medium">🟡 MEDIUM</span>');
-            html = html.replace(/🟢 LOW/g, '<span class="priority-low">🟢 LOW</span>');
+            html = html.replace(/🔴 URGENT/g, '<span style="color: #dc2626; font-weight: bold;">🔴 URGENT</span>');
+            html = html.replace(/🟠 HIGH/g, '<span style="color: #ea580c; font-weight: bold;">🟠 HIGH</span>');
+            html = html.replace(/🟡 MEDIUM/g, '<span style="color: #f59e0b; font-weight: bold;">🟡 MEDIUM</span>');
+            html = html.replace(/🟢 LOW/g, '<span style="color: #48bb78; font-weight: bold;">🟢 LOW</span>');
             
             // Line breaks
             html = html.replace(/\n/g, '<br>');
