@@ -205,18 +205,11 @@ async def query(request: QueryRequest):
         # Build context for Claude
         import json
         context = f"""
-You are a cybersecurity threat intelligence analyst.
+Analyze these {len(enriched_data)} CISA KEV vulnerabilities for: "{request.query}"
 
-User Query: "{request.query}"
+Data: {json.dumps(enriched_data[:20], indent=2)}
 
-Analyze these {len(enriched_data)} vulnerabilities from the CISA KEV catalog.
-
-Vulnerabilities:
-{json.dumps(enriched_data[:20], indent=2)}
-
-RESPONSE FORMAT:
-
-1. Create an HTML table showing the top 5-10 vulnerabilities:
+OUTPUT FORMAT:
 
 <table style="width:100%; border-collapse: collapse; margin: 20px 0; border: 1px solid #ddd;">
 <thead>
@@ -230,27 +223,23 @@ RESPONSE FORMAT:
 </tr>
 </thead>
 <tbody>
-[rows with border: 1px solid #ddd on each cell]
+[rows with border: 1px solid #ddd]
 </tbody>
 </table>
+Brief analysis (2-3 sentences) directly after table.
 
-2. Brief analysis (2-3 sentences) - put this IMMEDIATELY after the table with NO blank lines
-
-IMPORTANT:
-- Add border: 1px solid #ddd to ALL table cells
-- Use clickable CVE links: <a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" style="color: #667eea; font-weight: 600;">CVE-XXXX-XXXXX</a>
-- Color code CVSS scores: 9.0-10.0=#dc2626, 7.0-8.9=#ea580c, 4.0-6.9=#f59e0b
-- Show priority labels with emojis (🔴 URGENT, 🟠 HIGH, 🟡 MEDIUM, 🟢 LOW)
-- DO NOT add excessive blank lines or newlines
-- Keep it concise - NO SIEM queries in this response
+RULES:
+- CVE links: <a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX" target="_blank" style="color: #667eea; font-weight: 600;">CVE-XXXX</a>
+- CVSS colors: 9.0-10.0=#dc2626, 7.0-8.9=#ea580c, 4.0-6.9=#f59e0b
+- Priority: 🔴 URGENT, 🟠 HIGH, 🟡 MEDIUM, 🟢 LOW
+- NO extra blank lines
+- NO SIEM queries
 """
         
-        print("Calling Claude API...")
-        
-        # Call Claude
+        # Call Claude with reduced tokens
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=2000,  # Reduced - no queries needed!
+            max_tokens=1500,  # Reduced from 2000
             messages=[{"role": "user", "content": context}]
         )
         
@@ -355,34 +344,29 @@ async def generate_single_query(request: dict):
         
         # Build context based on query type
         if query_type == 'kql':
-            platform = "Azure Sentinel (KQL)"
-            language = "KQL"
+            platform = "Azure Sentinel KQL"
         elif query_type == 'spl':
-            platform = "Splunk (SPL)"
-            language = "SPL"
+            platform = "Splunk SPL"
         else:
-            platform = "Elasticsearch (EQL)"
-            language = "EQL"
+            platform = "Elasticsearch EQL"
         
         context = f"""
-Generate a production-ready detection query for {platform}.
-
-Target CVEs from CISA KEV catalog:
+Generate a {platform} detection query for these CVEs:
 {', '.join(cves[:10])}
 
-Create a comprehensive {language} query that:
-- Detects exploitation attempts for these CVEs
-- Covers authentication anomalies, process execution, network connections, file operations
-- Is production-ready and copy-paste ready
-- Includes CVE-specific indicators
+Requirements:
+- Production-ready, copy-paste ready
+- Detect authentication, process, network, file events
+- Include CVE indicators
+- Keep it concise but comprehensive
 
 Output ONLY the query code, no explanation.
 """
         
-        # Call Claude
+        # Call Claude with reduced tokens
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=2000,
+            max_tokens=1500,  # Reduced from 2000
             messages=[{"role": "user", "content": context}]
         )
         

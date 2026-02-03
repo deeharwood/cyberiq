@@ -38,6 +38,8 @@
         .generate-btn:hover { transform: translateY(-2px); }
         .generate-btn:disabled { background: #cbd5e0; cursor: not-allowed; }
         .results-content { color: #4a5568; line-height: 1.8; font-size: 15px; }
+        .results-content table { margin-bottom: 20px !important; }
+        .results-content p { margin: 10px 0; }
     </style>
 </head>
 <body>
@@ -121,15 +123,10 @@
             
             let html = data.response.trim();
             
-            // Remove ALL leading newlines
-            html = html.replace(/^\n+/, '');
-            
-            // Remove newlines before AND after tables
+            // NUCLEAR: Strip ALL newlines except around tables
             html = html.replace(/\n+(<table)/g, '$1');
-            html = html.replace(/(<\/table>)\n+/g, '$1\n\n');
-            
-            // Reduce ALL multiple newlines to just 2
-            html = html.replace(/\n{3,}/g, '\n\n');
+            html = html.replace(/(<\/table>)\n+/g, '$1\n');
+            html = html.replace(/\n+/g, '\n');
             
             // Bold
             html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
@@ -140,11 +137,11 @@
             html = html.replace(/🟡 MEDIUM/g, '<span style="color:#f59e0b;font-weight:bold">🟡 MEDIUM</span>');
             html = html.replace(/🟢 LOW/g, '<span style="color:#48bb78;font-weight:bold">🟢 LOW</span>');
             
-            // Convert newlines to br
+            // Convert ONLY the remaining newlines to br
             html = html.replace(/\n/g, '<br>');
             
-            // AGGRESSIVE: Remove excessive br tags (more than 1 in a row!)
-            html = html.replace(/(<br>){2,}/g, '<br>');
+            // FINAL CLEANUP: Remove ALL consecutive br tags
+            html = html.replace(/(<br>\s*)+/g, '<br>');
             
             document.getElementById('results-content').innerHTML = html;
         } catch (error) {
