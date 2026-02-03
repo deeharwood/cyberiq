@@ -186,9 +186,9 @@
             border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
             padding: 40px;
-            max-width: 900px;
+            max-width: 1000px;
             width: 100%;
-            margin: 0 auto;
+            margin: 0 auto 30px;
         }
         
         .results-header {
@@ -217,6 +217,94 @@
             color: #4a5568;
             line-height: 1.8;
             font-size: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .tabs-container {
+            display: none;
+            margin-top: 30px;
+        }
+        
+        .tab-buttons {
+            display: flex;
+            gap: 10px;
+            border-bottom: 2px solid #e2e8f0;
+            margin-bottom: 20px;
+        }
+        
+        .tab-btn {
+            background: #f7fafc;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            color: #4a5568;
+            transition: all 0.2s;
+        }
+        
+        .tab-btn:hover {
+            background: #edf2f7;
+        }
+        
+        .tab-btn.active {
+            background: white;
+            color: #667eea;
+            border-bottom: 3px solid #667eea;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .query-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .query-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2d3748;
+        }
+        
+        .copy-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+        
+        .copy-btn:hover {
+            background: #5568d3;
+        }
+        
+        .copy-btn.copied {
+            background: #48bb78;
+        }
+        
+        .query-code {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
         }
         
         @media (max-width: 768px) {
@@ -226,6 +314,14 @@
             
             .send-btn {
                 width: 100%;
+            }
+            
+            .tab-buttons {
+                flex-direction: column;
+            }
+            
+            .tab-btn {
+                border-radius: 8px;
             }
         }
     </style>
@@ -278,9 +374,48 @@
             <div class="performance-badge" id="performance-badge"></div>
         </div>
         <div class="results-content" id="results-content"></div>
+        
+        <!-- SIEM Query Tabs -->
+        <div class="tabs-container" id="tabs-container">
+            <div class="tab-buttons">
+                <button class="tab-btn active" onclick="switchTab('kql')">Azure Sentinel (KQL)</button>
+                <button class="tab-btn" onclick="switchTab('spl')">Splunk (SPL)</button>
+                <button class="tab-btn" onclick="switchTab('eql')">Elasticsearch (EQL)</button>
+            </div>
+            
+            <div id="kql-tab" class="tab-content active">
+                <div class="query-header">
+                    <div class="query-title">Azure Sentinel (KQL)</div>
+                    <button class="copy-btn" onclick="copyQuery('kql')">📋 Copy Query</button>
+                </div>
+                <div class="query-code" id="kql-code"></div>
+            </div>
+            
+            <div id="spl-tab" class="tab-content">
+                <div class="query-header">
+                    <div class="query-title">Splunk (SPL)</div>
+                    <button class="copy-btn" onclick="copyQuery('spl')">📋 Copy Query</button>
+                </div>
+                <div class="query-code" id="spl-code"></div>
+            </div>
+            
+            <div id="eql-tab" class="tab-content">
+                <div class="query-header">
+                    <div class="query-title">Elasticsearch (EQL)</div>
+                    <button class="copy-btn" onclick="copyQuery('eql')">📋 Copy Query</button>
+                </div>
+                <div class="query-code" id="eql-code"></div>
+            </div>
+        </div>
     </div>
     
     <script>
+        let currentQueries = {
+            kql: '',
+            spl: '',
+            eql: ''
+        };
+        
         function fillQuery(text) {
             document.getElementById('query-input').value = text;
             document.getElementById('query-input').focus();
@@ -289,6 +424,68 @@
         function handleKeyPress(event) {
             if (event.key === 'Enter') {
                 search();
+            }
+        }
+        
+        function switchTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName + '-tab').classList.add('active');
+            event.target.classList.add('active');
+        }
+        
+        function copyQuery(queryType) {
+            const query = currentQueries[queryType];
+            if (!query) {
+                alert('No query available to copy');
+                return;
+            }
+            
+            navigator.clipboard.writeText(query).then(() => {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = '✅ Copied!';
+                btn.classList.add('copied');
+                
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.classList.remove('copied');
+                }, 2000);
+            });
+        }
+        
+        function extractQueries(text) {
+            // Extract KQL query
+            const kqlMatch = text.match(/\*\*Azure Sentinel \(KQL\):\*\*\s*```(?:kql)?\s*([\s\S]*?)```/i);
+            if (kqlMatch) {
+                currentQueries.kql = kqlMatch[1].trim();
+                document.getElementById('kql-code').textContent = currentQueries.kql;
+            }
+            
+            // Extract SPL query
+            const splMatch = text.match(/\*\*Splunk \(SPL\):\*\*\s*```(?:spl)?\s*([\s\S]*?)```/i);
+            if (splMatch) {
+                currentQueries.spl = splMatch[1].trim();
+                document.getElementById('spl-code').textContent = currentQueries.spl;
+            }
+            
+            // Extract EQL query
+            const eqlMatch = text.match(/\*\*Elasticsearch \(EQL\):\*\*\s*```(?:eql)?\s*([\s\S]*?)```/i);
+            if (eqlMatch) {
+                currentQueries.eql = eqlMatch[1].trim();
+                document.getElementById('eql-code').textContent = currentQueries.eql;
+            }
+            
+            // Show tabs if we found queries
+            if (kqlMatch || splMatch || eqlMatch) {
+                document.getElementById('tabs-container').style.display = 'block';
             }
         }
         
@@ -336,6 +533,9 @@
                 document.getElementById('performance-badge').textContent = `⚡ ${duration}s`;
                 document.getElementById('results-content').innerHTML = formatResponse(data.response);
                 
+                // Extract and display SIEM queries
+                extractQueries(data.response);
+                
             } catch (error) {
                 console.error('Error:', error);
                 document.getElementById('loading').style.display = 'none';
@@ -356,6 +556,11 @@
             html = html.replace(/🟠 HIGH/g, '<span style="color: #ea580c; font-weight: bold;">🟠 HIGH</span>');
             html = html.replace(/🟡 MEDIUM/g, '<span style="color: #f59e0b; font-weight: bold;">🟡 MEDIUM</span>');
             html = html.replace(/🟢 LOW/g, '<span style="color: #48bb78; font-weight: bold;">🟢 LOW</span>');
+            
+            // Remove query sections from main display (they'll be in tabs)
+            html = html.replace(/\*\*Azure Sentinel \(KQL\):\*\*[\s\S]*?```[\s\S]*?```/gi, '');
+            html = html.replace(/\*\*Splunk \(SPL\):\*\*[\s\S]*?```[\s\S]*?```/gi, '');
+            html = html.replace(/\*\*Elasticsearch \(EQL\):\*\*[\s\S]*?```[\s\S]*?```/gi, '');
             
             // Line breaks
             html = html.replace(/\n/g, '<br>');

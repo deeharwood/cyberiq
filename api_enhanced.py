@@ -214,13 +214,50 @@ Analyze these {len(enriched_data)} vulnerabilities from the CISA KEV catalog.
 Vulnerabilities:
 {json.dumps(enriched_data[:20], indent=2)}
 
-Based on the user's query above, provide a concise threat intelligence analysis:
-1. Brief summary addressing their specific question (2-3 sentences)
-2. Top 3-5 most relevant vulnerabilities with their priority labels and EPSS scores
-3. Key patterns or trends you observe
-4. Actionable recommendations for security teams
+MANDATORY RESPONSE FORMAT:
 
-Be concise and focus on answering the user's specific question.
+1. First, create an HTML table showing the top 5-10 vulnerabilities:
+
+<table style="width:100%; border-collapse: collapse; margin: 20px 0;">
+<thead>
+<tr style="background: linear-gradient(135deg, #667eea, #764ba2); color: white;">
+<th style="padding: 12px; text-align: left; border: 1px solid #ddd;">CVE ID</th>
+<th style="padding: 12px; text-align: left; border: 1px solid #ddd;">Vulnerability</th>
+<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">CVSS</th>
+<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">EPSS</th>
+<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Priority</th>
+<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Date Added</th>
+</tr>
+</thead>
+<tbody>
+<!-- Add rows for each vulnerability -->
+</tbody>
+</table>
+
+2. Then provide brief analysis (2-3 sentences)
+
+3. ALWAYS provide detection queries for ALL THREE SIEMs:
+
+**Azure Sentinel (KQL):**
+```kql
+[Full KQL query here]
+```
+
+**Splunk (SPL):**
+```spl
+[Full SPL query here]
+```
+
+**Elasticsearch (EQL):**
+```eql
+[Full EQL query here]
+```
+
+IMPORTANT:
+- Use clickable CVE links: <a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXXX" target="_blank" style="color: #667eea; font-weight: 600;">CVE-XXXX-XXXXX</a>
+- Color code CVSS scores: 9.0-10.0=#dc2626, 7.0-8.9=#ea580c, 4.0-6.9=#f59e0b
+- Show priority labels with emojis
+- ALWAYS include all 3 SIEM queries - this is a CORE FEATURE
 """
         
         print("Calling Claude API...")
@@ -228,7 +265,7 @@ Be concise and focus on answering the user's specific question.
         # Call Claude
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=1500,
+            max_tokens=4000,  # Increased for tables + 3 queries
             messages=[{"role": "user", "content": context}]
         )
         
