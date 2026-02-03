@@ -252,7 +252,7 @@ Be concise and focus on answering the user's specific question.
         
         response_text = response.content[0].text
         
-        print("Response received from Claude")
+        print("Response received from Claude....")
         
         return {
             'response': response_text,
