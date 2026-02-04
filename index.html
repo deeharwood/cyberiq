@@ -121,27 +121,13 @@
             document.getElementById('send-btn').disabled = false;
             document.getElementById('performance-badge').textContent = '⚡ ' + duration + 's';
             
-            let html = data.response.trim();
+            let html = data.response;
             
-            // NUCLEAR: Strip ALL newlines except around tables
-            html = html.replace(/\n+(<table)/g, '$1');
-            html = html.replace(/(<\/table>)\n+/g, '$1\n');
-            html = html.replace(/\n+/g, '\n');
-            
-            // Bold
-            html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-            
-            // Priority labels
-            html = html.replace(/🔴 URGENT/g, '<span style="color:#dc2626;font-weight:bold">🔴 URGENT</span>');
-            html = html.replace(/🟠 HIGH/g, '<span style="color:#ea580c;font-weight:bold">🟠 HIGH</span>');
-            html = html.replace(/🟡 MEDIUM/g, '<span style="color:#f59e0b;font-weight:bold">🟡 MEDIUM</span>');
-            html = html.replace(/🟢 LOW/g, '<span style="color:#48bb78;font-weight:bold">🟢 LOW</span>');
-            
-            // Convert ONLY the remaining newlines to br
-            html = html.replace(/\n/g, '<br>');
-            
-            // FINAL CLEANUP: Remove ALL consecutive br tags
-            html = html.replace(/(<br>\s*)+/g, '<br>');
+            // DON'T process HTML responses - they're already formatted!
+            if (!html.includes('<table')) {
+                // Only convert newlines for plain text
+                html = html.replace(/\n/g, '<br>');
+            }
             
             document.getElementById('results-content').innerHTML = html;
         } catch (error) {

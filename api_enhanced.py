@@ -245,12 +245,13 @@ RULES:
         
         response_text = response.content[0].text
         
-        # Strip ALL leading and trailing whitespace
-        response_text = response_text.strip()
-        
-        # Remove excessive leading newlines
-        import re
-        response_text = re.sub(r'^\n+', '', response_text)
+        # AGGRESSIVE: Remove ALL newlines if there's a table
+        if '<table' in response_text:
+            # Remove ALL newlines, tabs, extra spaces
+            response_text = re.sub(r'\n+', '', response_text)
+        else:
+            # For non-table responses, keep them
+            response_text = response_text.strip()
         
         return QueryResponse(
             response=response_text,
