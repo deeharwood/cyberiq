@@ -905,22 +905,24 @@ Output ONLY the query code, no explanation.
 
 @app.post("/api/export-csv")
 async def export_csv(request: QueryRequest):
-    """Export query results to CSV"""
+    """Export query results to CSV - matches query endpoint logic exactly"""
     try:
         import csv
         from io import StringIO
         
-        # Fetch data using same logic as query endpoint
+        print(f"CSV Export: query={request.query}")
+        
+        # Fetch KEV data
         kev_data = fetch_kev_data()
         
-        # Filter data
-        filtered_kev_data = filter_vulnerabilities(kev_data, request.vendor, request.date_filter, request.query)
+        # Filter vulnerabilities by vendor and date only
+        filtered_kev_data = filter_vulnerabilities(kev_data, request.vendor, request.date_filter, "")
         
-        # Mark source
+        # Mark all KEVs with source
         for vuln in filtered_kev_data:
             vuln['source'] = 'CISA KEV'
         
-        # Determine time windows
+        # Determine time window for NVD CVEs based on query
         nvd_days = 30
         zdi_days = 30
         
@@ -928,25 +930,77 @@ async def export_csv(request: QueryRequest):
             nvd_days = 7
             zdi_days = 14
         
-        # Fetch all sources
+        # Fetch ZDI advisories and NVD CVEs
         zdi_advisories = fetch_zdi_advisories(days=zdi_days)
         recent_nvd_cves = fetch_recent_nvd_cves(days=nvd_days)
         
-        # Combine
+        # Combine all three sources
         filtered_data = zdi_advisories + recent_nvd_cves + filtered_kev_data
         
-        # Extract filters from query
+        print(f"CSV Export: Combined {len(zdi_advisories)} ZDI + {len(recent_nvd_cves)} NVD + {len(filtered_kev_data)} KEVs = {len(filtered_data)} total")
+        
+        # Extract and apply smart filters from query
         vendor_filter, type_filter = extract_filters_from_query(request.query)
         
-        # Apply filters
         if vendor_filter:
+            print(f"CSV Export: Applying vendor filter: {vendor_filter}")
             filtered_data = [v for v in filtered_data 
                            if vendor_filter in extract_vendor_from_cve(v).lower()]
+            print(f"CSV Export: After vendor filter: {len(filtered_data)} vulnerabilities")
         
         if type_filter:
+            print(f"CSV Export: Applying vulnerability type filter: {type_filter}")
             filtered_data = [v for v in filtered_data
                            if any(type_filter in vt.lower() 
                                 for vt in classify_vulnerability_type(v))]
+            print(f"CSV Export: After type filter: {len(filtered_data)} vulnerabilities")
+        
+        # Special handling for ransomware queries
+        if 'ransomware' in request.query.lower():
+            print("CSV Export: Filtering for ransomware KEVs...")
+            filtered_data = [vuln for vuln in filtered_data 
+                           if vuln.get('knownRansomwareCampaignUse', '').lower() in ['known', 'yes', 'true', 'y']]
+            print(f"CSV Export: Found {len(filtered_data)} ransomware KEVs")
+            
+            if len(filtered_data) < 10:
+                print("CSV Export: Too few ransomware KEVs, using all KEVs")
+                filtered_data = filtered_kev_data
+        
+        # Special handling for "zero-day" queries
+        elif any(word in request.query.lower() for word in ['zero-day', 'zero day', 'zeroday', '0-day', '0day']):
+            print("CSV Export: Zero-day query - showing ZDI + NVD Recent")
+            filtered_data = zdi_advisories + recent_nvd_cves
+            filtered_data.sort(key=lambda x: x.get('dateAdded', ''), reverse=True)
+        
+        # Special handling for "recent", "latest", "new", "emerging"
+        elif any(word in request.query.lower() for word in ['recent', 'new', 'latest', 'emerging']):
+            print("CSV Export: Recent/latest query - prioritizing ZDI + NVD")
+            filtered_data = zdi_advisories + recent_nvd_cves + filtered_kev_data
+            filtered_data.sort(key=lambda x: x.get('dateAdded', ''), reverse=True)
+        
+        print(f"CSV Export: Exporting {len(filtered_data)} total vulnerabilities")
+        
+        if not filtered_data:
+            return {
+                "csv": "",
+                "count": 0,
+                "error": "No vulnerabilities found matching your criteria"
+            }
+        
+        # Extract CVE IDs for enrichment
+        cves = [vuln.get('cveID') for vuln in filtered_data if vuln.get('cveID')]
+        
+        # Fetch CVSS and EPSS data
+        print("CSV Export: Fetching CVSS data...")
+        cvss_data = fetch_cvss_data(cves)
+        
+        print("CSV Export: Fetching EPSS data...")
+        epss_data = fetch_epss_data(cves)
+        
+        # Enrich vulnerability data
+        enriched_data = enrich_vulnerability_data(filtered_data, cvss_data, epss_data)
+        
+        print(f"CSV Export: Enriched {len(enriched_data)} vulnerabilities")
         
         # Create CSV
         output = StringIO()
@@ -956,28 +1010,36 @@ async def export_csv(request: QueryRequest):
         writer.writerow(['CVE ID', 'Vendor', 'Product', 'Vulnerability', 'CVSS', 'EPSS', 
                         'Priority', 'Source', 'Date', 'Type', 'Description'])
         
-        # Data rows
-        for vuln in filtered_data[:100]:  # Limit to 100 rows
-            vendor = extract_vendor_from_cve(vuln)
-            vuln_types = ', '.join(classify_vulnerability_type(vuln))
-            
-            writer.writerow([
-                vuln.get('cveID', 'N/A'),
-                vendor,
-                vuln.get('product', 'N/A'),
-                vuln.get('vulnerabilityName', 'N/A')[:100],
-                vuln.get('cvss_score', 'N/A'),
-                vuln.get('epss_score', 'N/A'),
-                vuln.get('priority_label', 'N/A'),
-                vuln.get('source', 'N/A'),
-                vuln.get('dateAdded', 'N/A'),
-                vuln_types,
-                vuln.get('shortDescription', 'N/A')[:200]
-            ])
+        # Data rows - Export ALL results (no limit)
+        exported_count = 0
+        for vuln in enriched_data:
+            try:
+                vendor = extract_vendor_from_cve(vuln)
+                vuln_types = ', '.join(classify_vulnerability_type(vuln))
+                
+                writer.writerow([
+                    vuln.get('cveID', 'N/A'),
+                    vendor,
+                    vuln.get('product', 'N/A'),
+                    (vuln.get('vulnerabilityName', 'N/A') or 'N/A')[:200],
+                    vuln.get('cvss_score', 'N/A'),
+                    vuln.get('epss_score', 'N/A'),
+                    vuln.get('priority_label', 'N/A'),
+                    vuln.get('source', 'N/A'),
+                    vuln.get('dateAdded', 'N/A'),
+                    vuln_types,
+                    (vuln.get('shortDescription', 'N/A') or 'N/A')[:500]
+                ])
+                exported_count += 1
+            except Exception as e:
+                print(f"CSV Export: Error writing row for {vuln.get('cveID', 'unknown')}: {str(e)}")
+                continue
+        
+        print(f"CSV Export: Successfully exported {exported_count} rows")
         
         return {
             "csv": output.getvalue(),
-            "count": len(filtered_data)
+            "count": exported_count
         }
         
     except Exception as e:
