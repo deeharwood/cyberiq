@@ -19,10 +19,15 @@ class QueryRequest(BaseModel):
     vendor: str = ""
     date_filter: str = ""
     query: str
+    page: int = 1
+    per_page: int = 10
 
 class QueryResponse(BaseModel):
     response: str
     count: int = 0
+    total_count: int = 0
+    current_page: int = 1
+    total_pages: int = 1
 
 @app.get("/")
 async def read_root():
@@ -674,17 +679,25 @@ Data includes THREE intelligence sources:
 
 Time windows: {time_window_msg}
 
-Sample Data (showing diverse mix of all sources): {json.dumps(sample_data, indent=2)}
+# Pagination
+Page {request.page} of {(len(enriched_data) + request.per_page - 1) // request.per_page}
+Showing items {(request.page - 1) * request.per_page + 1} to {min(request.page * request.per_page, len(enriched_data))} of {len(enriched_data)} total
+
+Sample Data for context (showing diverse mix): {json.dumps(sample_data[:10], indent=2)}
+
+Page Data to display (SHOW EXACTLY THESE {min(request.per_page, len(enriched_data) - (request.page - 1) * request.per_page)} items):
+{json.dumps(enriched_data[(request.page - 1) * request.per_page : request.page * request.per_page], indent=2)}
 
 CRITICAL INSTRUCTIONS:
-- You MUST include ZDI advisories in your response if zdi_count > 0
-- Show ZDI results FIRST (they are the earliest disclosures)
+- Display EXACTLY the vulnerabilities from "Page Data to display" above
+- Show ALL items in the page data (up to {request.per_page} items)
+- Do NOT skip any items from the page data
 - Use GREEN badges for ZDI, BLUE badges for NVD, RED badges for CISA KEV
-- If showing "zero-day" or "latest" results, prioritize ZDI advisories as they represent the earliest warnings
+- Keep the table format exactly as specified
 
 OUTPUT FORMAT:
 
-Generate a table with 10-15 vulnerabilities (prioritize showing ZDI advisories first, then NVD, then KEVs):
+Generate a table with the EXACT vulnerabilities from "Page Data to display" ({min(request.per_page, len(enriched_data) - (request.page - 1) * request.per_page)} rows):
 
 <table style="width:100%; border-collapse: collapse; margin: 20px 0; border: 1px solid #ddd;">
 <thead>
@@ -759,9 +772,16 @@ IMPORTANT NOTES:
             # For non-table responses, keep them
             response_text = response_text.strip()
         
+        # Calculate pagination metadata
+        total_count = len(enriched_data)
+        total_pages = (total_count + request.per_page - 1) // request.per_page
+        
         return QueryResponse(
             response=response_text,
-            count=len(enriched_data)
+            count=min(request.per_page, total_count - (request.page - 1) * request.per_page),
+            total_count=total_count,
+            current_page=request.page,
+            total_pages=total_pages
         )
         
     except HTTPException:
