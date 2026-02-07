@@ -6,8 +6,9 @@ import os
 import requests
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
+from bs4 import BeautifulSoup
 
 app = FastAPI()
 
@@ -44,13 +45,17 @@ async def get_status():
         recent_nvd_cves = fetch_recent_nvd_cves(days=30)
         nvd_count = len(recent_nvd_cves)
         
-        total_count = kev_count + nvd_count
+        zdi_advisories = fetch_zdi_advisories(days=30)
+        zdi_count = len(zdi_advisories)
+        
+        total_count = kev_count + nvd_count + zdi_count
         
         return {
             "status": "online",
             "data": {
-                "cisa_kevs": kev_count,
+                "zdi_advisories": zdi_count,
                 "recent_nvd_cves": nvd_count,
+                "cisa_kevs": kev_count,
                 "total": total_count
             },
             "last_updated": datetime.now().isoformat()
@@ -157,6 +162,119 @@ def fetch_recent_nvd_cves(days=30):
         
     except Exception as e:
         print(f"❌ Error fetching NVD CVEs: {str(e)}")
+        return []
+
+def fetch_zdi_advisories(days=30):
+    """Fetch recent Zero Day Initiative advisories from RSS feed"""
+    print(f"Fetching ZDI advisories from RSS feed (last {days} days)...")
+    
+    try:
+        # ZDI published advisories RSS feed
+        url = "https://www.zerodayinitiative.com/rss/published/"
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, 'xml')  # Use XML parser for RSS
+        
+        # Calculate cutoff date
+        cutoff_date = datetime.now() - timedelta(days=days)
+        
+        advisories = []
+        
+        # Parse RSS items
+        items = soup.find_all('item')
+        
+        for item in items:
+            try:
+                # Extract fields from RSS
+                title = item.find('title').text if item.find('title') else ''
+                link = item.find('link').text if item.find('link') else ''
+                pub_date_str = item.find('pubDate').text if item.find('pubDate') else ''
+                description = item.find('description').text if item.find('description') else ''
+                
+                # Parse publication date (RSS format: "Mon, 03 Feb 2026 00:00:00 GMT")
+                try:
+                    pub_date = datetime.strptime(pub_date_str, '%a, %d %b %Y %H:%M:%S %Z')
+                except:
+                    try:
+                        # Try alternative format
+                        pub_date = datetime.strptime(pub_date_str, '%a, %d %b %Y %H:%M:%S %z')
+                    except:
+                        print(f"Could not parse date: {pub_date_str}")
+                        continue
+                
+                # Check if within time window
+                if pub_date < cutoff_date:
+                    continue
+                
+                # Extract ZDI ID from title or link
+                zdi_id_match = re.search(r'ZDI-\d{2}-\d+', title or link)
+                zdi_id = zdi_id_match.group(0) if zdi_id_match else 'ZDI-UNKNOWN'
+                
+                # Extract CVE if present
+                cve_match = re.search(r'CVE-\d{4}-\d+', title + ' ' + description)
+                cve_id = cve_match.group(0) if cve_match else zdi_id
+                
+                # Extract vendor from title (usually first part before hyphen)
+                vendor = 'Unknown'
+                title_parts = title.split(' - ')
+                if len(title_parts) > 0:
+                    vendor = title_parts[0].split()[0] if title_parts[0] else 'Unknown'
+                
+                # Estimate severity from title keywords
+                title_lower = (title + ' ' + description).lower()
+                if any(word in title_lower for word in ['remote code execution', 'rce', 'arbitrary code execution', 'code execution', 'command injection']):
+                    cvss_score = 9.0
+                    severity = 'CRITICAL'
+                elif any(word in title_lower for word in ['privilege escalation', 'authentication bypass', 'sql injection', 'xxe', 'deserialize']):
+                    cvss_score = 8.5
+                    severity = 'HIGH'
+                elif any(word in title_lower for word in ['xss', 'cross-site', 'csrf', 'directory traversal', 'path traversal']):
+                    cvss_score = 7.5
+                    severity = 'HIGH'
+                else:
+                    cvss_score = 7.0
+                    severity = 'HIGH'
+                
+                # Clean up title (remove ZDI ID if present)
+                clean_title = re.sub(r'\(ZDI-\d{2}-\d+\)', '', title).strip()
+                
+                # Format as KEV-compatible structure
+                advisory = {
+                    'cveID': cve_id,
+                    'vendorProject': vendor,
+                    'product': 'Various',
+                    'vulnerabilityName': clean_title[:100],
+                    'dateAdded': pub_date.strftime('%Y-%m-%d'),
+                    'shortDescription': (description[:200] if description else clean_title),
+                    'requiredAction': 'Review ZDI advisory and apply vendor patches',
+                    'dueDate': '',
+                    'knownRansomwareCampaignUse': 'Unknown',
+                    'cvss_score': cvss_score,
+                    'cvss_severity': severity,
+                    'epss_score': 0,
+                    'priority': '🔴 URGENT' if cvss_score >= 9.0 else '🟠 HIGH',
+                    'source': 'ZDI',
+                    'zdi_id': zdi_id,
+                    'advisory_url': link
+                }
+                
+                advisories.append(advisory)
+                
+            except Exception as e:
+                print(f"Error parsing ZDI RSS item: {str(e)}")
+                continue
+        
+        print(f"✅ Fetched {len(advisories)} ZDI advisories from RSS feed")
+        return advisories
+        
+    except Exception as e:
+        print(f"❌ Error fetching ZDI RSS feed: {str(e)}")
         return []
 
 def fetch_cvss_data(cves):
@@ -306,11 +424,16 @@ async def query(request: QueryRequest):
         
         # Determine time window for NVD CVEs based on query
         nvd_days = 30  # Default: 30 days
+        zdi_days = 30  # Default: 30 days for ZDI
         
         # For "latest" or "zero-day" queries, use shorter window
         if any(word in request.query.lower() for word in ['latest', 'zero-day', 'zero day', 'zeroday', '0-day', '0day']):
             nvd_days = 7  # Last 7 days only
-            print(f"Query contains 'latest/zero-day' - using {nvd_days} day window for NVD CVEs")
+            zdi_days = 14  # Last 14 days for ZDI (often published earlier)
+            print(f"Query contains 'latest/zero-day' - using {nvd_days} days for NVD, {zdi_days} days for ZDI")
+        
+        # Fetch ZDI advisories (earliest disclosures)
+        zdi_advisories = fetch_zdi_advisories(days=zdi_days)
         
         # Fetch recent NVD CVEs
         recent_nvd_cves = fetch_recent_nvd_cves(days=nvd_days)
@@ -321,12 +444,18 @@ async def query(request: QueryRequest):
             recent_nvd_cves = fetch_recent_nvd_cves(days=30)
             nvd_days = 30
         
+        if len(zdi_advisories) == 0 and zdi_days < 30:
+            print(f"No ZDI advisories found in last {zdi_days} days, expanding to 30 days...")
+            zdi_advisories = fetch_zdi_advisories(days=30)
+            zdi_days = 30
+        
+        print(f"Found {len(zdi_advisories)} ZDI advisories from last {zdi_days} days")
         print(f"Found {len(recent_nvd_cves)} NVD Recent CVEs from last {nvd_days} days")
         
-        # Combine KEVs and recent NVD CVEs
-        filtered_data = filtered_kev_data + recent_nvd_cves
+        # Combine all three sources: ZDI + NVD + KEVs
+        filtered_data = zdi_advisories + recent_nvd_cves + filtered_kev_data
         
-        print(f"Found {len(filtered_kev_data)} KEVs + {len(recent_nvd_cves)} recent NVD CVEs = {len(filtered_data)} total")
+        print(f"Total: {len(zdi_advisories)} ZDI + {len(recent_nvd_cves)} NVD + {len(filtered_kev_data)} KEVs = {len(filtered_data)} vulnerabilities")
         
         # Special handling for ransomware queries
         if 'ransomware' in request.query.lower():
@@ -340,20 +469,22 @@ async def query(request: QueryRequest):
                 print("Too few ransomware KEVs found, letting Claude filter from all KEVs")
                 filtered_data = filtered_kev_data
         
-        # Special handling for "zero-day" queries - ONLY show NVD Recent
+        # Special handling for "zero-day" queries - prioritize ZDI + NVD (earliest sources)
         elif any(word in request.query.lower() for word in ['zero-day', 'zero day', 'zeroday', '0-day', '0day']):
-            print("Zero-day query detected - showing ONLY NVD Recent CVEs...")
-            filtered_data = recent_nvd_cves
-            print(f"Found {len(filtered_data)} recent NVD CVEs")
-        
-        # Special handling for "recent", "latest", "new", "emerging" - prioritize NVD
-        elif any(word in request.query.lower() for word in ['recent', 'new', 'latest', 'emerging']):
-            print("Recent/latest query detected - prioritizing NVD Recent CVEs...")
-            # Show NVD CVEs first, then KEVs
-            filtered_data = recent_nvd_cves + filtered_kev_data
+            print("Zero-day query detected - showing ZDI + NVD Recent (earliest disclosures)...")
+            filtered_data = zdi_advisories + recent_nvd_cves
             # Sort by date, newest first
             filtered_data.sort(key=lambda x: x.get('dateAdded', ''), reverse=True)
-            print(f"Returning {len(recent_nvd_cves)} NVD + {len(filtered_kev_data)} KEVs, sorted by date")
+            print(f"Found {len(zdi_advisories)} ZDI + {len(recent_nvd_cves)} NVD CVEs")
+        
+        # Special handling for "recent", "latest", "new", "emerging" - prioritize ZDI and NVD
+        elif any(word in request.query.lower() for word in ['recent', 'new', 'latest', 'emerging']):
+            print("Recent/latest query detected - prioritizing ZDI + NVD...")
+            # Show ZDI first, then NVD, then KEVs
+            filtered_data = zdi_advisories + recent_nvd_cves + filtered_kev_data
+            # Sort by date, newest first
+            filtered_data.sort(key=lambda x: x.get('dateAdded', ''), reverse=True)
+            print(f"Returning {len(zdi_advisories)} ZDI + {len(recent_nvd_cves)} NVD + {len(filtered_kev_data)} KEVs, sorted by date")
         
         if not filtered_data:
             raise HTTPException(status_code=404, detail="No vulnerabilities found matching your criteria")
@@ -379,20 +510,28 @@ async def query(request: QueryRequest):
         # Count sources
         kev_count = len([v for v in enriched_data if v.get('source') == 'CISA KEV'])
         nvd_count = len([v for v in enriched_data if v.get('source') == 'NVD Recent'])
+        zdi_count = len([v for v in enriched_data if v.get('source') == 'ZDI'])
         
         # Build time window message
-        time_window_msg = f"last {nvd_days} days"
+        time_window_msg = f"NVD: last {nvd_days} days, ZDI: last {zdi_days} days"
         
         context = f"""
 Analyze these {len(enriched_data)} vulnerabilities for: "{request.query}"
 
-Data includes:
-- {kev_count} CISA KEVs (confirmed exploited)
-- {nvd_count} NVD Recent CVEs (newly disclosed in {time_window_msg}, CVSS >= 7.0)
+Data includes THREE intelligence sources:
+- {zdi_count} ZDI Advisories (Zero Day Initiative - earliest disclosures, often pre-CVE)
+- {nvd_count} NVD Recent CVEs (newly disclosed in last {nvd_days} days, CVSS >= 7.0)
+- {kev_count} CISA KEVs (confirmed actively exploited in the wild)
+
+Time windows: {time_window_msg}
 
 Vulnerability Data: {json.dumps(enriched_data[:20], indent=2)}
 
-IMPORTANT: If showing "latest" or "zero-day" results, mention the time window ({time_window_msg}) in your analysis.
+IMPORTANT: 
+- ZDI advisories are the EARLIEST warnings (often published before CVE assignment)
+- NVD CVEs are newly disclosed vulnerabilities
+- CISA KEVs are confirmed exploitation in the wild
+- For "latest" or "zero-day" queries, emphasize ZDI and NVD sources as they show emerging threats
 
 OUTPUT FORMAT:
 
@@ -417,19 +556,23 @@ Brief analysis (2-3 sentences) directly after table.
 RULES:
 - CVE links: <a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX" target="_blank" style="color: #667eea; font-weight: 600;">CVE-XXXX</a>
 - Source badges (IMPORTANT - Always include the Source column!): 
-  * CISA KEV (confirmed exploited in the wild): <span style="background: #dc2626; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">CISA KEV</span>
-  * NVD Recent (newly disclosed, last 30 days): <span style="background: #2563eb; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">NVD</span>
+  * ZDI (Zero Day Initiative - earliest disclosures): <span style="background: #10b981; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">ZDI</span>
+  * NVD Recent (newly disclosed): <span style="background: #2563eb; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">NVD</span>
+  * CISA KEV (confirmed exploited): <span style="background: #dc2626; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">CISA KEV</span>
 - CVSS colors: 9.0-10.0=#dc2626, 7.0-8.9=#ea580c, 4.0-6.9=#f59e0b
 - Priority: 🔴 URGENT, 🟠 HIGH, 🟡 MEDIUM, 🟢 LOW
 - NO extra blank lines
 - NO SIEM queries
 
 IMPORTANT NOTES:
-- "Zero-day" queries show ONLY NVD Recent CVEs (newly disclosed vulnerabilities)
-- "Latest/Recent/New" queries prioritize NVD Recent CVEs first
-- CISA KEVs are vulnerabilities confirmed to be actively exploited
-- NVD Recent CVEs are newly disclosed (last 30 days) with CVSS >= 7.0
-- Always show the Source column so users know which vulnerabilities are confirmed exploited vs newly disclosed
+- THREE SOURCES with different timing:
+  1. ZDI (GREEN badge) = Earliest disclosures, often published BEFORE CVE assignment
+  2. NVD (BLUE badge) = Newly disclosed CVEs (last 7-30 days), CVSS >= 7.0
+  3. CISA KEV (RED badge) = Confirmed active exploitation in the wild
+- "Zero-day" queries prioritize ZDI + NVD (earliest sources)
+- "Latest/Recent" queries show all 3 sources, sorted by date (newest first)
+- Always emphasize ZDI advisories as the EARLIEST warning available
+- Always show the Source column so users understand the intelligence timeline
 """
         
         # Call Claude with reduced tokens
