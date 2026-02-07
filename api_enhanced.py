@@ -1002,8 +1002,10 @@ async def export_csv(request: QueryRequest):
         
         print(f"CSV Export: Enriched {len(enriched_data)} vulnerabilities")
         
-        # Create CSV
+        # Create CSV with UTF-8 BOM for Excel compatibility
         output = StringIO()
+        # Add UTF-8 BOM for Excel
+        output.write('\ufeff')
         writer = csv.writer(output)
         
         # Headers
@@ -1017,6 +1019,12 @@ async def export_csv(request: QueryRequest):
                 vendor = extract_vendor_from_cve(vuln)
                 vuln_types = ', '.join(classify_vulnerability_type(vuln))
                 
+                # Strip emojis from priority for CSV compatibility
+                priority = vuln.get('priority_label', 'N/A')
+                if priority != 'N/A':
+                    # Remove emojis (just keep the text part)
+                    priority = re.sub(r'[^\w\s-]', '', priority).strip()
+                
                 writer.writerow([
                     vuln.get('cveID', 'N/A'),
                     vendor,
@@ -1024,7 +1032,7 @@ async def export_csv(request: QueryRequest):
                     (vuln.get('vulnerabilityName', 'N/A') or 'N/A')[:200],
                     vuln.get('cvss_score', 'N/A'),
                     vuln.get('epss_score', 'N/A'),
-                    vuln.get('priority_label', 'N/A'),
+                    priority,  # Now without emojis
                     vuln.get('source', 'N/A'),
                     vuln.get('dateAdded', 'N/A'),
                     vuln_types,
