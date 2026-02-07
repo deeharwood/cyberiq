@@ -52,15 +52,15 @@
     
     <div class="stats-container">
         <div class="stat-badge">
-            <div class="stat-number">691</div>
-            <div class="stat-label">MITRE Techniques</div>
-        </div>
-        <div class="stat-badge">
-            <div class="stat-number">1,499</div>
+            <div class="stat-number" id="stat-kevs">1,499</div>
             <div class="stat-label">CISA KEVs</div>
         </div>
         <div class="stat-badge">
-            <div class="stat-number">2,190</div>
+            <div class="stat-number" id="stat-nvd">Loading...</div>
+            <div class="stat-label">Recent NVD CVEs</div>
+        </div>
+        <div class="stat-badge">
+            <div class="stat-number" id="stat-total">Loading...</div>
             <div class="stat-label">Total Items</div>
         </div>
     </div>
@@ -103,6 +103,26 @@
     
     <script>
     let lastQuery = '';
+    
+    // Fetch and display current stats on page load
+    async function fetchStats() {
+        try {
+            const response = await fetch('/api/status');
+            const data = await response.json();
+            
+            if (data.status === 'online') {
+                document.getElementById('stat-kevs').textContent = data.data.cisa_kevs.toLocaleString();
+                document.getElementById('stat-nvd').textContent = data.data.recent_nvd_cves.toLocaleString();
+                document.getElementById('stat-total').textContent = data.data.total.toLocaleString();
+            }
+        } catch (error) {
+            console.error('Error fetching stats:', error);
+            // Keep default values on error
+        }
+    }
+    
+    // Load stats on page load
+    fetchStats();
     
     function fillQuery(text) {
         document.getElementById('query-input').value = text;

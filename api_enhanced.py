@@ -33,6 +33,34 @@ async def health():
     """Health check endpoint"""
     return {"status": "healthy"}
 
+@app.get("/api/status")
+async def get_status():
+    """Get current data status and counts"""
+    try:
+        # Fetch current data
+        kev_data = fetch_kev_data()
+        kev_count = len(kev_data.get('vulnerabilities', []))
+        
+        recent_nvd_cves = fetch_recent_nvd_cves(days=30)
+        nvd_count = len(recent_nvd_cves)
+        
+        total_count = kev_count + nvd_count
+        
+        return {
+            "status": "online",
+            "data": {
+                "cisa_kevs": kev_count,
+                "recent_nvd_cves": nvd_count,
+                "total": total_count
+            },
+            "last_updated": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
 def fetch_kev_data():
     """Fetch KEV data from CISA"""
     url = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
@@ -43,6 +71,93 @@ def fetch_kev_data():
     except Exception as e:
         print(f"Error fetching KEV data: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch KEV data: {str(e)}")
+
+def fetch_recent_nvd_cves(days=30):
+    """Fetch recent CVEs from NVD (last N days) - High/Critical only"""
+    print(f"Fetching recent CVEs from NVD (last {days} days)...")
+    
+    # Calculate date range
+    from datetime import timedelta
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
+    
+    # Format dates for NVD API (ISO 8601)
+    start_date_str = start_date.strftime('%Y-%m-%dT00:00:00.000')
+    end_date_str = end_date.strftime('%Y-%m-%dT23:59:59.999')
+    
+    url = f"https://services.nvd.nist.gov/rest/json/cves/2.0/?pubStartDate={start_date_str}&pubEndDate={end_date_str}"
+    
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        
+        # Extract CVEs
+        cves = []
+        for item in data.get('vulnerabilities', []):
+            cve_data = item.get('cve', {})
+            cve_id = cve_data.get('id', '')
+            
+            # Get CVSS score
+            cvss_score = 0
+            cvss_severity = 'UNKNOWN'
+            metrics = cve_data.get('metrics', {})
+            
+            # Try CVSS v3.1 first, then v3.0, then v2.0
+            if 'cvssMetricV31' in metrics and metrics['cvssMetricV31']:
+                cvss_data = metrics['cvssMetricV31'][0]['cvssData']
+                cvss_score = cvss_data.get('baseScore', 0)
+                cvss_severity = cvss_data.get('baseSeverity', 'UNKNOWN')
+            elif 'cvssMetricV30' in metrics and metrics['cvssMetricV30']:
+                cvss_data = metrics['cvssMetricV30'][0]['cvssData']
+                cvss_score = cvss_data.get('baseScore', 0)
+                cvss_severity = cvss_data.get('baseSeverity', 'UNKNOWN')
+            elif 'cvssMetricV2' in metrics and metrics['cvssMetricV2']:
+                cvss_data = metrics['cvssMetricV2'][0]['cvssData']
+                cvss_score = cvss_data.get('baseScore', 0)
+                cvss_severity = 'HIGH' if cvss_score >= 7.0 else 'MEDIUM'
+            
+            # Only include High/Critical (CVSS >= 7.0)
+            if cvss_score < 7.0:
+                continue
+            
+            # Get description
+            descriptions = cve_data.get('descriptions', [])
+            description = ''
+            for desc in descriptions:
+                if desc.get('lang') == 'en':
+                    description = desc.get('value', '')
+                    break
+            
+            # Get published date
+            published = cve_data.get('published', '')[:10]  # Just date part
+            
+            # Format as KEV-like structure for compatibility
+            cve_entry = {
+                'cveID': cve_id,
+                'vendorProject': 'Various',
+                'product': 'Various',
+                'vulnerabilityName': f"{cve_id} - {cvss_severity}",
+                'dateAdded': published,
+                'shortDescription': description[:200] if description else 'No description available',
+                'requiredAction': 'Review and patch as appropriate',
+                'dueDate': '',
+                'knownRansomwareCampaignUse': 'Unknown',
+                'cvss_score': cvss_score,
+                'cvss_severity': cvss_severity,
+                'epss_score': 0,
+                'priority': '🔴 URGENT' if cvss_score >= 9.0 else '🟠 HIGH',
+                'source': 'NVD Recent'
+            }
+            
+            cves.append(cve_entry)
+        
+        print(f"✅ Fetched {len(cves)} recent high-severity CVEs from NVD")
+        return cves
+        
+    except Exception as e:
+        print(f"❌ Error fetching NVD CVEs: {str(e)}")
+        return []
 
 def fetch_cvss_data(cves):
     """Fetch CVSS scores from NVD"""
@@ -183,12 +298,42 @@ async def query(request: QueryRequest):
         
         # Filter vulnerabilities by vendor and date only
         # Don't filter by query_text - that's the question for Claude!
-        filtered_data = filter_vulnerabilities(kev_data, request.vendor, request.date_filter, "")
+        filtered_kev_data = filter_vulnerabilities(kev_data, request.vendor, request.date_filter, "")
+        
+        # Mark all KEVs with source
+        for vuln in filtered_kev_data:
+            vuln['source'] = 'CISA KEV'
+        
+        # Fetch recent NVD CVEs (last 30 days, CVSS >= 7.0)
+        recent_nvd_cves = fetch_recent_nvd_cves(days=30)
+        
+        # Combine KEVs and recent NVD CVEs
+        filtered_data = filtered_kev_data + recent_nvd_cves
+        
+        print(f"Found {len(filtered_kev_data)} KEVs + {len(recent_nvd_cves)} recent NVD CVEs = {len(filtered_data)} total")
+        
+        # Special handling for ransomware queries
+        if 'ransomware' in request.query.lower():
+            print("Filtering for ransomware KEVs...")
+            filtered_data = [vuln for vuln in filtered_data 
+                           if vuln.get('knownRansomwareCampaignUse', '').lower() in ['known', 'yes', 'true', 'y']]
+            print(f"Found {len(filtered_data)} ransomware KEVs")
+            
+            # If still too few, show all KEVs and let Claude filter
+            if len(filtered_data) < 10:
+                print("Too few ransomware KEVs found, letting Claude filter from all KEVs")
+                filtered_data = filtered_kev_data
+        
+        # Special handling for "recent" or "new" queries - prioritize NVD
+        if any(word in request.query.lower() for word in ['recent', 'new', 'latest', 'emerging']):
+            print("Prioritizing recent NVD CVEs...")
+            # Sort by date, newest first
+            filtered_data.sort(key=lambda x: x.get('dateAdded', ''), reverse=True)
         
         if not filtered_data:
             raise HTTPException(status_code=404, detail="No vulnerabilities found matching your criteria")
         
-        print(f"Found {len(filtered_data)} matching vulnerabilities")
+        print(f"Returning {len(filtered_data)} total vulnerabilities")
         
         # Get CVEs for enrichment
         cves = [vuln.get('cveID') for vuln in filtered_data]
@@ -220,7 +365,8 @@ OUTPUT FORMAT:
 <th style="padding: 12px; text-align: center; border: 1px solid #ddd;">CVSS</th>
 <th style="padding: 12px; text-align: center; border: 1px solid #ddd;">EPSS</th>
 <th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Priority</th>
-<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Date Added</th>
+<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Source</th>
+<th style="padding: 12px; text-align: center; border: 1px solid #ddd;">Date</th>
 </tr>
 </thead>
 <tbody>
@@ -231,6 +377,9 @@ Brief analysis (2-3 sentences) directly after table.
 
 RULES:
 - CVE links: <a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX" target="_blank" style="color: #667eea; font-weight: 600;">CVE-XXXX</a>
+- Source badges: 
+  * CISA KEV: <span style="background: #dc2626; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">CISA KEV</span>
+  * NVD Recent: <span style="background: #2563eb; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">NVD</span>
 - CVSS colors: 9.0-10.0=#dc2626, 7.0-8.9=#ea580c, 4.0-6.9=#f59e0b
 - Priority: 🔴 URGENT, 🟠 HIGH, 🟡 MEDIUM, 🟢 LOW
 - NO extra blank lines
