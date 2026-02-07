@@ -562,6 +562,8 @@ CRITICAL INSTRUCTIONS:
 
 OUTPUT FORMAT:
 
+Generate a table with 10-15 vulnerabilities (prioritize showing ZDI advisories first, then NVD, then KEVs):
+
 <table style="width:100%; border-collapse: collapse; margin: 20px 0; border: 1px solid #ddd;">
 <thead>
 <tr style="background: linear-gradient(135deg, #667eea, #764ba2); color: white;">
@@ -575,17 +577,29 @@ OUTPUT FORMAT:
 </tr>
 </thead>
 <tbody>
-[rows with border: 1px solid #ddd]
+[10-15 rows with proper source badges - show ZDI results first!]
 </tbody>
 </table>
 Brief analysis (2-3 sentences) directly after table.
 
 RULES:
 - CVE links: <a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX" target="_blank" style="color: #667eea; font-weight: 600;">CVE-XXXX</a>
-- Source badges (IMPORTANT - Always include the Source column!): 
+- Source badges (IMPORTANT - Always include the Source column with HTML badges!): 
   * ZDI (Zero Day Initiative - earliest disclosures): <span style="background: #10b981; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">ZDI</span>
   * NVD Recent (newly disclosed): <span style="background: #2563eb; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">NVD</span>
   * CISA KEV (confirmed exploited): <span style="background: #dc2626; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">CISA KEV</span>
+
+EXAMPLE ROW (use this exact format):
+<tr style="border: 1px solid #ddd;">
+<td style="padding: 12px;"><a href="https://nvd.nist.gov/vuln/detail/CVE-2025-61808" target="_blank" style="color: #667eea; font-weight: 600;">CVE-2025-61808</a></td>
+<td style="padding: 12px;">Adobe ColdFusion RCE</td>
+<td style="padding: 12px; text-align: center; color: #dc2626; font-weight: 600;">9.0</td>
+<td style="padding: 12px; text-align: center;">5.4%</td>
+<td style="padding: 12px; text-align: center;">🔴 URGENT</td>
+<td style="padding: 12px; text-align: center;"><span style="background: #10b981; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">ZDI</span></td>
+<td style="padding: 12px; text-align: center;">2026-02-06</td>
+</tr>
+
 - CVSS colors: 9.0-10.0=#dc2626, 7.0-8.9=#ea580c, 4.0-6.9=#f59e0b
 - Priority: 🔴 URGENT, 🟠 HIGH, 🟡 MEDIUM, 🟢 LOW
 - NO extra blank lines
@@ -602,10 +616,10 @@ IMPORTANT NOTES:
 - Always show the Source column so users understand the intelligence timeline
 """
         
-        # Call Claude with reduced tokens
+        # Call Claude with sufficient tokens for 10-15 results
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=1500,  # Reduced from 2000
+            max_tokens=2500,  # Increased to fit 10-15 table rows
             messages=[{"role": "user", "content": context}]
         )
         
