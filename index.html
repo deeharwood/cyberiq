@@ -69,14 +69,24 @@
         </div>
     </div>
     
+    <!-- Top Vendors Widget -->
+    <div class="top-vendors-widget" id="top-vendors-widget" style="max-width: 1200px; margin: 40px auto 20px; padding: 25px; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+        <h3 style="margin: 0 0 20px 0; color: #2d3748; font-size: 18px; font-weight: 600;">🏢 Top Vendors by Vulnerabilities</h3>
+        <div id="vendor-chips" style="display: flex; flex-wrap: wrap; gap: 10px;">
+            <div style="color: #718096; font-size: 14px;">Loading...</div>
+        </div>
+    </div>
+    
     <div class="main-card" id="main-card">
         <h1 class="welcome-title">Welcome to CyberIQ</h1>
         <p class="welcome-description">Triple-source intelligence: ZDI (earliest disclosures), NVD (newly published), and CISA KEVs (confirmed exploited). Get the earliest warning possible.</p>
         <div class="try-label">Try these:</div>
         <div class="suggestions">
             <button class="suggestion-btn" onclick="fillQuery('Latest zero-day vulnerabilities')">Latest Zero-Days</button>
-            <button class="suggestion-btn" onclick="fillQuery('Recent high-severity CVEs')">Recent CVEs</button>
-            <button class="suggestion-btn" onclick="fillQuery('Top 5 KEVs by CVSS')">Top KEVs</button>
+            <button class="suggestion-btn" onclick="fillQuery('Microsoft vulnerabilities')">Microsoft</button>
+            <button class="suggestion-btn" onclick="fillQuery('RCE vulnerabilities')">RCE Exploits</button>
+            <button class="suggestion-btn" onclick="fillQuery('Adobe zero-days')">Adobe</button>
+            <button class="suggestion-btn" onclick="fillQuery('Top KEVs by CVSS')">Top KEVs</button>
             <button class="suggestion-btn" onclick="fillQuery('Ransomware KEVs')">Ransomware</button>
         </div>
         <div class="input-container">
@@ -95,6 +105,7 @@
             <h2 class="results-title">Analysis Results</h2>
             <div class="header-actions">
                 <div class="performance-badge" id="performance-badge"></div>
+                <button class="generate-btn" onclick="exportCSV()" style="background: #10b981; margin-right: 10px;">📥 Export CSV</button>
                 <button class="generate-btn" id="generate-btn" onclick="openQueryTab()">🔍 Generate SIEM Queries</button>
             </div>
         </div>
@@ -102,8 +113,8 @@
         <div class="try-label" style="margin: 20px 0 15px 0; text-align: center;">Try these queries:</div>
         <div class="suggestions" style="margin-bottom: 30px;">
             <button class="suggestion-btn" onclick="fillQuery('Latest zero-day vulnerabilities')">Latest Zero-Days</button>
-            <button class="suggestion-btn" onclick="fillQuery('Recent high-severity CVEs')">Recent CVEs</button>
-            <button class="suggestion-btn" onclick="fillQuery('Top 5 KEVs by CVSS')">Top KEVs</button>
+            <button class="suggestion-btn" onclick="fillQuery('Microsoft vulnerabilities')">Microsoft</button>
+            <button class="suggestion-btn" onclick="fillQuery('RCE vulnerabilities')">RCE Exploits</button>
             <button class="suggestion-btn" onclick="fillQuery('Ransomware KEVs')">Ransomware</button>
         </div>
         
@@ -138,6 +149,69 @@
     
     // Load stats on page load
     fetchStats();
+    
+    // Fetch and display top vendors
+    async function fetchVendorStats() {
+        try {
+            const response = await fetch('/api/vendor-stats');
+            const data = await response.json();
+            
+            const vendorChips = document.getElementById('vendor-chips');
+            if (data.top_vendors && data.top_vendors.length > 0) {
+                vendorChips.innerHTML = data.top_vendors.map(v => 
+                    `<button class="vendor-chip" onclick="fillQuery('${v.vendor} vulnerabilities')" 
+                     style="padding: 8px 16px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; border-radius: 20px; font-size: 13px; cursor: pointer; transition: all 0.3s; display: inline-flex; align-items: center; gap: 8px;">
+                        <span style="font-weight: 600;">${v.vendor}</span>
+                        <span style="background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 10px; font-size: 11px;">${v.count}</span>
+                    </button>`
+                ).join('');
+            }
+        } catch (error) {
+            console.error('Error fetching vendor stats:', error);
+        }
+    }
+    
+    // Load vendor stats on page load
+    fetchVendorStats();
+    
+    // Export current results to CSV
+    async function exportCSV() {
+        try {
+            const query = lastQuery || document.getElementById('query-input-2').value;
+            if (!query) {
+                alert('No query to export');
+                return;
+            }
+            
+            const response = await fetch('/api/export-csv', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    vendor: '',
+                    date_filter: '',
+                    query: query
+                })
+            });
+            
+            const data = await response.json();
+            
+            // Create download link
+            const blob = new Blob([data.csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `cyberiq_export_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            alert(`Exported ${data.count} vulnerabilities to CSV!`);
+        } catch (error) {
+            console.error('Error exporting CSV:', error);
+            alert('Error exporting CSV. Please try again.');
+        }
+    }
     
     function fillQuery(text) {
         document.getElementById('query-input').value = text;

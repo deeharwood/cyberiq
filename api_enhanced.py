@@ -400,6 +400,93 @@ def calculate_priority_label(cvss, epss):
             return "🟢 LOW"
     return "⚪ UNKNOWN"
 
+def extract_vendor_from_cve(vuln):
+    """Extract vendor name from vulnerability data"""
+    # Try vendorProject first (from KEV data)
+    vendor = vuln.get('vendorProject', '').strip()
+    if vendor and vendor.lower() not in ['various', 'unknown', 'n/a', '']:
+        return vendor
+    
+    # Try to extract from vulnerability name or description
+    text = (vuln.get('vulnerabilityName', '') + ' ' + 
+            vuln.get('shortDescription', '') + ' ' +
+            vuln.get('cveID', '')).lower()
+    
+    # Common vendors (in priority order)
+    vendors = [
+        'Microsoft', 'Adobe', 'Apple', 'Google', 'Oracle', 'Cisco', 'VMware',
+        'SAP', 'IBM', 'Dell', 'HP', 'Juniper', 'Fortinet', 'Palo Alto',
+        'Citrix', 'Linux', 'Red Hat', 'Ubuntu', 'Debian', 'SUSE',
+        'WordPress', 'Drupal', 'Joomla', 'PHP', 'Apache', 'Nginx',
+        'MySQL', 'PostgreSQL', 'MongoDB', 'Jenkins', 'Docker', 'Kubernetes',
+        'AWS', 'Azure', 'Firefox', 'Chrome', 'Safari', 'Android', 'iOS',
+        'Windows', 'Exchange', 'SharePoint', 'Office', 'Outlook',
+        'Acrobat', 'Reader', 'Photoshop', 'Flash', 'Java', 'OpenSSL',
+        'Zoom', 'Teams', 'Slack', 'Salesforce', 'ServiceNow',
+        'SonicWall', 'Sophos', 'Trend Micro', 'McAfee', 'Symantec',
+        'F5', 'Barracuda', 'Check Point', 'Ivanti', 'Splunk'
+    ]
+    
+    for v in vendors:
+        if v.lower() in text:
+            return v
+    
+    return 'Unknown'
+
+def classify_vulnerability_type(vuln):
+    """Classify vulnerability type based on description"""
+    text = (vuln.get('vulnerabilityName', '') + ' ' + 
+            vuln.get('shortDescription', '')).lower()
+    
+    vuln_types = []
+    
+    if any(word in text for word in ['remote code execution', 'rce', 'arbitrary code execution', 'code execution']):
+        vuln_types.append('RCE')
+    if any(word in text for word in ['sql injection', 'sqli']):
+        vuln_types.append('SQL Injection')
+    if any(word in text for word in ['cross-site scripting', 'xss']):
+        vuln_types.append('XSS')
+    if any(word in text for word in ['privilege escalation', 'escalation of privilege']):
+        vuln_types.append('Privilege Escalation')
+    if any(word in text for word in ['authentication bypass', 'auth bypass']):
+        vuln_types.append('Authentication Bypass')
+    if any(word in text for word in ['buffer overflow', 'heap overflow', 'stack overflow']):
+        vuln_types.append('Buffer Overflow')
+    if any(word in text for word in ['directory traversal', 'path traversal']):
+        vuln_types.append('Directory Traversal')
+    if any(word in text for word in ['command injection']):
+        vuln_types.append('Command Injection')
+    if any(word in text for word in ['denial of service', 'dos']):
+        vuln_types.append('DoS')
+    
+    return vuln_types if vuln_types else ['Other']
+
+def extract_filters_from_query(query):
+    """Extract vendor and type filters from query"""
+    query_lower = query.lower()
+    
+    vendor = None
+    vuln_type = None
+    
+    # Vendors
+    vendors = ['microsoft', 'adobe', 'apple', 'google', 'oracle', 'cisco', 'vmware',
+               'linux', 'windows', 'php', 'wordpress', 'apache', 'nginx', 'zoom']
+    
+    for v in vendors:
+        if v in query_lower:
+            vendor = v
+            break
+    
+    # Types
+    if any(word in query_lower for word in ['rce', 'remote code', 'code execution']):
+        vuln_type = 'rce'
+    elif any(word in query_lower for word in ['sql injection', 'sqli']):
+        vuln_type = 'sql'
+    elif any(word in query_lower for word in ['xss', 'cross-site']):
+        vuln_type = 'xss'
+    
+    return vendor, vuln_type
+
 def filter_vulnerabilities(kev_data, vendor, date_filter, query_text):
     """Filter vulnerabilities based on criteria"""
     vulnerabilities = kev_data.get('vulnerabilities', [])
@@ -477,6 +564,22 @@ async def query(request: QueryRequest):
         filtered_data = zdi_advisories + recent_nvd_cves + filtered_kev_data
         
         print(f"Total: {len(zdi_advisories)} ZDI + {len(recent_nvd_cves)} NVD + {len(filtered_kev_data)} KEVs = {len(filtered_data)} vulnerabilities")
+        
+        # Extract and apply smart filters from query
+        vendor_filter, type_filter = extract_filters_from_query(request.query)
+        
+        if vendor_filter:
+            print(f"Applying vendor filter: {vendor_filter}")
+            filtered_data = [v for v in filtered_data 
+                           if vendor_filter in extract_vendor_from_cve(v).lower()]
+            print(f"After vendor filter: {len(filtered_data)} vulnerabilities")
+        
+        if type_filter:
+            print(f"Applying vulnerability type filter: {type_filter}")
+            filtered_data = [v for v in filtered_data
+                           if any(type_filter in vt.lower() 
+                                for vt in classify_vulnerability_type(v))]
+            print(f"After type filter: {len(filtered_data)} vulnerabilities")
         
         # Special handling for ransomware queries
         if 'ransomware' in request.query.lower():
@@ -778,6 +881,124 @@ Output ONLY the query code, no explanation.
         
     except Exception as e:
         print(f"Error generating query: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/export-csv")
+async def export_csv(request: QueryRequest):
+    """Export query results to CSV"""
+    try:
+        import csv
+        from io import StringIO
+        
+        # Fetch data using same logic as query endpoint
+        kev_data = fetch_kev_data()
+        
+        # Filter data
+        filtered_kev_data = filter_vulnerabilities(kev_data, request.vendor, request.date_filter, request.query)
+        
+        # Mark source
+        for vuln in filtered_kev_data:
+            vuln['source'] = 'CISA KEV'
+        
+        # Determine time windows
+        nvd_days = 30
+        zdi_days = 30
+        
+        if any(word in request.query.lower() for word in ['latest', 'zero-day', 'zero day', 'zeroday', '0-day', '0day']):
+            nvd_days = 7
+            zdi_days = 14
+        
+        # Fetch all sources
+        zdi_advisories = fetch_zdi_advisories(days=zdi_days)
+        recent_nvd_cves = fetch_recent_nvd_cves(days=nvd_days)
+        
+        # Combine
+        filtered_data = zdi_advisories + recent_nvd_cves + filtered_kev_data
+        
+        # Extract filters from query
+        vendor_filter, type_filter = extract_filters_from_query(request.query)
+        
+        # Apply filters
+        if vendor_filter:
+            filtered_data = [v for v in filtered_data 
+                           if vendor_filter in extract_vendor_from_cve(v).lower()]
+        
+        if type_filter:
+            filtered_data = [v for v in filtered_data
+                           if any(type_filter in vt.lower() 
+                                for vt in classify_vulnerability_type(v))]
+        
+        # Create CSV
+        output = StringIO()
+        writer = csv.writer(output)
+        
+        # Headers
+        writer.writerow(['CVE ID', 'Vendor', 'Product', 'Vulnerability', 'CVSS', 'EPSS', 
+                        'Priority', 'Source', 'Date', 'Type', 'Description'])
+        
+        # Data rows
+        for vuln in filtered_data[:100]:  # Limit to 100 rows
+            vendor = extract_vendor_from_cve(vuln)
+            vuln_types = ', '.join(classify_vulnerability_type(vuln))
+            
+            writer.writerow([
+                vuln.get('cveID', 'N/A'),
+                vendor,
+                vuln.get('product', 'N/A'),
+                vuln.get('vulnerabilityName', 'N/A')[:100],
+                vuln.get('cvss_score', 'N/A'),
+                vuln.get('epss_score', 'N/A'),
+                vuln.get('priority_label', 'N/A'),
+                vuln.get('source', 'N/A'),
+                vuln.get('dateAdded', 'N/A'),
+                vuln_types,
+                vuln.get('shortDescription', 'N/A')[:200]
+            ])
+        
+        return {
+            "csv": output.getvalue(),
+            "count": len(filtered_data)
+        }
+        
+    except Exception as e:
+        print(f"Error exporting CSV: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/vendor-stats")
+async def get_vendor_stats():
+    """Get vendor statistics (top vendors by vuln count)"""
+    try:
+        # Fetch all data sources
+        kev_data = fetch_kev_data()
+        recent_nvd_cves = fetch_recent_nvd_cves(days=30)
+        zdi_advisories = fetch_zdi_advisories(days=30)
+        
+        all_vulns = (kev_data.get('vulnerabilities', []) + 
+                    recent_nvd_cves + zdi_advisories)
+        
+        # Count by vendor
+        vendor_counts = {}
+        for vuln in all_vulns:
+            vendor = extract_vendor_from_cve(vuln)
+            vendor_counts[vendor] = vendor_counts.get(vendor, 0) + 1
+        
+        # Sort by count
+        sorted_vendors = sorted(vendor_counts.items(), key=lambda x: x[1], reverse=True)
+        
+        # Top 15 vendors
+        top_vendors = [
+            {"vendor": v, "count": c} 
+            for v, c in sorted_vendors[:15]
+            if v != 'Unknown'
+        ]
+        
+        return {
+            "top_vendors": top_vendors,
+            "total_vendors": len([v for v in vendor_counts if v != 'Unknown'])
+        }
+        
+    except Exception as e:
+        print(f"Error getting vendor stats: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
