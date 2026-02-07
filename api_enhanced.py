@@ -324,11 +324,20 @@ async def query(request: QueryRequest):
                 print("Too few ransomware KEVs found, letting Claude filter from all KEVs")
                 filtered_data = filtered_kev_data
         
-        # Special handling for "recent" or "new" queries - prioritize NVD
-        if any(word in request.query.lower() for word in ['recent', 'new', 'latest', 'emerging']):
-            print("Prioritizing recent NVD CVEs...")
+        # Special handling for "zero-day" queries - ONLY show NVD Recent
+        elif any(word in request.query.lower() for word in ['zero-day', 'zero day', 'zeroday', '0-day', '0day']):
+            print("Zero-day query detected - showing ONLY NVD Recent CVEs...")
+            filtered_data = recent_nvd_cves
+            print(f"Found {len(filtered_data)} recent NVD CVEs")
+        
+        # Special handling for "recent", "latest", "new", "emerging" - prioritize NVD
+        elif any(word in request.query.lower() for word in ['recent', 'new', 'latest', 'emerging']):
+            print("Recent/latest query detected - prioritizing NVD Recent CVEs...")
+            # Show NVD CVEs first, then KEVs
+            filtered_data = recent_nvd_cves + filtered_kev_data
             # Sort by date, newest first
             filtered_data.sort(key=lambda x: x.get('dateAdded', ''), reverse=True)
+            print(f"Returning {len(recent_nvd_cves)} NVD + {len(filtered_kev_data)} KEVs, sorted by date")
         
         if not filtered_data:
             raise HTTPException(status_code=404, detail="No vulnerabilities found matching your criteria")
@@ -350,10 +359,19 @@ async def query(request: QueryRequest):
         
         # Build context for Claude
         import json
+        
+        # Count sources
+        kev_count = len([v for v in enriched_data if v.get('source') == 'CISA KEV'])
+        nvd_count = len([v for v in enriched_data if v.get('source') == 'NVD Recent'])
+        
         context = f"""
-Analyze these {len(enriched_data)} CISA KEV vulnerabilities for: "{request.query}"
+Analyze these {len(enriched_data)} vulnerabilities for: "{request.query}"
 
-Data: {json.dumps(enriched_data[:20], indent=2)}
+Data includes:
+- {kev_count} CISA KEVs (confirmed exploited)
+- {nvd_count} NVD Recent CVEs (newly disclosed, last 30 days)
+
+Vulnerability Data: {json.dumps(enriched_data[:20], indent=2)}
 
 OUTPUT FORMAT:
 
@@ -377,13 +395,20 @@ Brief analysis (2-3 sentences) directly after table.
 
 RULES:
 - CVE links: <a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX" target="_blank" style="color: #667eea; font-weight: 600;">CVE-XXXX</a>
-- Source badges: 
-  * CISA KEV: <span style="background: #dc2626; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">CISA KEV</span>
-  * NVD Recent: <span style="background: #2563eb; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">NVD</span>
+- Source badges (IMPORTANT - Always include the Source column!): 
+  * CISA KEV (confirmed exploited in the wild): <span style="background: #dc2626; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">CISA KEV</span>
+  * NVD Recent (newly disclosed, last 30 days): <span style="background: #2563eb; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">NVD</span>
 - CVSS colors: 9.0-10.0=#dc2626, 7.0-8.9=#ea580c, 4.0-6.9=#f59e0b
 - Priority: 🔴 URGENT, 🟠 HIGH, 🟡 MEDIUM, 🟢 LOW
 - NO extra blank lines
 - NO SIEM queries
+
+IMPORTANT NOTES:
+- "Zero-day" queries show ONLY NVD Recent CVEs (newly disclosed vulnerabilities)
+- "Latest/Recent/New" queries prioritize NVD Recent CVEs first
+- CISA KEVs are vulnerabilities confirmed to be actively exploited
+- NVD Recent CVEs are newly disclosed (last 30 days) with CVSS >= 7.0
+- Always show the Source column so users know which vulnerabilities are confirmed exploited vs newly disclosed
 """
         
         # Call Claude with reduced tokens

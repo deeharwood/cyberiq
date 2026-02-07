@@ -67,12 +67,13 @@
     
     <div class="main-card" id="main-card">
         <h1 class="welcome-title">Welcome to CyberIQ</h1>
-        <p class="welcome-description">Ask me anything about threat intelligence, vulnerabilities, or attack techniques.</p>
+        <p class="welcome-description">Powered by CISA KEVs (confirmed exploited) and NVD Recent CVEs (newly disclosed). Ask about zero-days, emerging threats, or active exploits.</p>
         <div class="try-label">Try these:</div>
         <div class="suggestions">
-            <button class="suggestion-btn" onclick="fillQuery('Top 5 KEVs by CVSS')">Top 5 KEVs by CVSS</button>
-            <button class="suggestion-btn" onclick="fillQuery('Ransomware KEVs')">Ransomware KEVs</button>
-            <button class="suggestion-btn" onclick="fillQuery('Microsoft vulnerabilities')">Microsoft KEVs</button>
+            <button class="suggestion-btn" onclick="fillQuery('Latest zero-day vulnerabilities')">Latest Zero-Days</button>
+            <button class="suggestion-btn" onclick="fillQuery('Recent high-severity CVEs')">Recent CVEs</button>
+            <button class="suggestion-btn" onclick="fillQuery('Top 5 KEVs by CVSS')">Top KEVs</button>
+            <button class="suggestion-btn" onclick="fillQuery('Ransomware KEVs')">Ransomware</button>
         </div>
         <div class="input-container">
             <input type="text" class="query-input" id="query-input" placeholder="Ask about threats..." onkeypress="if(event.key==='Enter')search()">
