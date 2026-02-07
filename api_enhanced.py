@@ -517,6 +517,31 @@ async def query(request: QueryRequest):
         # Build time window message
         time_window_msg = f"NVD: last {nvd_days} days, ZDI: last {zdi_days} days"
         
+        # Create a diverse sample showing all sources
+        sample_data = []
+        zdi_items = [v for v in enriched_data if v.get('source') == 'ZDI']
+        nvd_items = [v for v in enriched_data if v.get('source') == 'NVD Recent']
+        kev_items = [v for v in enriched_data if v.get('source') == 'CISA KEV']
+        
+        # Take proportional samples from each source (up to 20 total)
+        if zdi_count > 0:
+            sample_data.extend(zdi_items[:8])  # Show up to 8 ZDI
+        if nvd_count > 0:
+            sample_data.extend(nvd_items[:8])  # Show up to 8 NVD
+        if kev_count > 0:
+            sample_data.extend(kev_items[:4])  # Show up to 4 KEVs
+        
+        # If we have less than 20, take more from the largest source
+        if len(sample_data) < 20:
+            remaining = 20 - len(sample_data)
+            if len(enriched_data) > len(sample_data):
+                for item in enriched_data:
+                    if item not in sample_data:
+                        sample_data.append(item)
+                        remaining -= 1
+                        if remaining == 0:
+                            break
+        
         context = f"""
 Analyze these {len(enriched_data)} vulnerabilities for: "{request.query}"
 
@@ -527,13 +552,13 @@ Data includes THREE intelligence sources:
 
 Time windows: {time_window_msg}
 
-Vulnerability Data: {json.dumps(enriched_data[:20], indent=2)}
+Sample Data (showing diverse mix of all sources): {json.dumps(sample_data, indent=2)}
 
-IMPORTANT: 
-- ZDI advisories are the EARLIEST warnings (often published before CVE assignment)
-- NVD CVEs are newly disclosed vulnerabilities
-- CISA KEVs are confirmed exploitation in the wild
-- For "latest" or "zero-day" queries, emphasize ZDI and NVD sources as they show emerging threats
+CRITICAL INSTRUCTIONS:
+- You MUST include ZDI advisories in your response if zdi_count > 0
+- Show ZDI results FIRST (they are the earliest disclosures)
+- Use GREEN badges for ZDI, BLUE badges for NVD, RED badges for CISA KEV
+- If showing "zero-day" or "latest" results, prioritize ZDI advisories as they represent the earliest warnings
 
 OUTPUT FORMAT:
 
