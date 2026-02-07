@@ -304,8 +304,24 @@ async def query(request: QueryRequest):
         for vuln in filtered_kev_data:
             vuln['source'] = 'CISA KEV'
         
-        # Fetch recent NVD CVEs (last 30 days, CVSS >= 7.0)
-        recent_nvd_cves = fetch_recent_nvd_cves(days=30)
+        # Determine time window for NVD CVEs based on query
+        nvd_days = 30  # Default: 30 days
+        
+        # For "latest" or "zero-day" queries, use shorter window
+        if any(word in request.query.lower() for word in ['latest', 'zero-day', 'zero day', 'zeroday', '0-day', '0day']):
+            nvd_days = 7  # Last 7 days only
+            print(f"Query contains 'latest/zero-day' - using {nvd_days} day window for NVD CVEs")
+        
+        # Fetch recent NVD CVEs
+        recent_nvd_cves = fetch_recent_nvd_cves(days=nvd_days)
+        
+        # Fallback: If zero results and looking for latest, expand to 30 days
+        if len(recent_nvd_cves) == 0 and nvd_days < 30:
+            print(f"No CVEs found in last {nvd_days} days, expanding to 30 days...")
+            recent_nvd_cves = fetch_recent_nvd_cves(days=30)
+            nvd_days = 30
+        
+        print(f"Found {len(recent_nvd_cves)} NVD Recent CVEs from last {nvd_days} days")
         
         # Combine KEVs and recent NVD CVEs
         filtered_data = filtered_kev_data + recent_nvd_cves
@@ -364,14 +380,19 @@ async def query(request: QueryRequest):
         kev_count = len([v for v in enriched_data if v.get('source') == 'CISA KEV'])
         nvd_count = len([v for v in enriched_data if v.get('source') == 'NVD Recent'])
         
+        # Build time window message
+        time_window_msg = f"last {nvd_days} days"
+        
         context = f"""
 Analyze these {len(enriched_data)} vulnerabilities for: "{request.query}"
 
 Data includes:
 - {kev_count} CISA KEVs (confirmed exploited)
-- {nvd_count} NVD Recent CVEs (newly disclosed, last 30 days)
+- {nvd_count} NVD Recent CVEs (newly disclosed in {time_window_msg}, CVSS >= 7.0)
 
 Vulnerability Data: {json.dumps(enriched_data[:20], indent=2)}
+
+IMPORTANT: If showing "latest" or "zero-day" results, mention the time window ({time_window_msg}) in your analysis.
 
 OUTPUT FORMAT:
 
