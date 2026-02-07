@@ -11,7 +11,9 @@
         .logo { font-size: 42px; font-weight: 700; margin-bottom: 10px; }
         .tagline { font-size: 18px; opacity: 0.95; }
         .stats-container { display: flex; gap: 20px; margin-bottom: 40px; flex-wrap: wrap; justify-content: center; }
-        .stat-badge { background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px); padding: 12px 24px; border-radius: 25px; color: white; font-weight: 600; font-size: 14px; border: 1px solid rgba(255, 255, 255, 0.3); }
+        .stat-badge { background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(10px); padding: 16px 28px; border-radius: 12px; color: white; font-weight: 400; font-size: 13px; border: none; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.9; text-align: center; }
+        .stat-number { font-size: 28px; font-weight: 700; margin-bottom: 4px; color: white; }
+        .stat-label { font-size: 11px; font-weight: 400; opacity: 0.85; letter-spacing: 1px; }
         .main-card { background: white; border-radius: 20px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); padding: 60px 50px; max-width: 750px; width: 100%; margin: 0 auto 30px; text-align: center; }
         .welcome-title { font-size: 36px; font-weight: 700; color: #2d3748; margin-bottom: 20px; }
         .welcome-description { font-size: 16px; color: #718096; margin-bottom: 40px; line-height: 1.6; }
@@ -49,9 +51,18 @@
     </div>
     
     <div class="stats-container">
-        <div class="stat-badge">691 MITRE Techniques</div>
-        <div class="stat-badge">1,499 CISA KEVs</div>
-        <div class="stat-badge">2,190 Total Items</div>
+        <div class="stat-badge">
+            <div class="stat-number">691</div>
+            <div class="stat-label">MITRE Techniques</div>
+        </div>
+        <div class="stat-badge">
+            <div class="stat-number">1,499</div>
+            <div class="stat-label">CISA KEVs</div>
+        </div>
+        <div class="stat-badge">
+            <div class="stat-number">2,190</div>
+            <div class="stat-label">Total Items</div>
+        </div>
     </div>
     
     <div class="main-card" id="main-card">
