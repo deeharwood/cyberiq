@@ -337,27 +337,46 @@ def enrich_vulnerability_data(vulnerabilities, cvss_scores, epss_scores):
         cve = vuln.get('cveID', '')
         enriched_vuln = vuln.copy()
         
-        # Add CVSS score
-        enriched_vuln['cvss_score'] = cvss_scores.get(cve, 'N/A')
+        # Add CVSS score - preserve estimated score if it exists (e.g., from ZDI)
+        if 'cvss_score' in vuln and vuln['cvss_score'] not in [0, None, 'N/A']:
+            # Keep existing estimated score (from ZDI/NVD fetch)
+            enriched_vuln['cvss_score'] = vuln['cvss_score']
+        else:
+            # Try to get from NVD lookup
+            enriched_vuln['cvss_score'] = cvss_scores.get(cve, 'N/A')
         
-        # Add EPSS score
-        enriched_vuln['epss_score'] = epss_scores.get(cve, 'N/A')
+        # Add EPSS score - preserve if exists, otherwise lookup
+        if 'epss_score' in vuln and vuln['epss_score'] not in [0, None, 'N/A']:
+            enriched_vuln['epss_score'] = vuln['epss_score']
+        else:
+            enriched_vuln['epss_score'] = epss_scores.get(cve, 'N/A')
         
         # Calculate priority label based on CVSS and EPSS
-        cvss = cvss_scores.get(cve, 0)
-        epss = epss_scores.get(cve, 0)
+        cvss = enriched_vuln.get('cvss_score', 0)
+        epss = enriched_vuln.get('epss_score', 0)
         
-        if isinstance(cvss, (int, float)) and isinstance(epss, (int, float)):
-            if cvss >= 9.0 and epss >= 10:
-                priority = "🔴 URGENT"
-            elif cvss >= 7.0 and epss >= 5:
-                priority = "🟠 HIGH"
-            elif cvss >= 4.0:
-                priority = "🟡 MEDIUM"
-            else:
-                priority = "🟢 LOW"
+        # Convert to float for comparison
+        try:
+            cvss = float(cvss) if cvss != 'N/A' else 0
+        except:
+            cvss = 0
+        try:
+            epss = float(epss) if epss != 'N/A' else 0
+        except:
+            epss = 0
+        
+        if cvss >= 9.0 and epss >= 10:
+            priority = "🔴 URGENT"
+        elif cvss >= 9.0:  # High CVSS alone = URGENT
+            priority = "🔴 URGENT"
+        elif cvss >= 7.0 and epss >= 5:
+            priority = "🟠 HIGH"
+        elif cvss >= 7.0:
+            priority = "🟠 HIGH"
+        elif cvss >= 4.0:
+            priority = "🟡 MEDIUM"
         else:
-            priority = "⚪ UNKNOWN"
+            priority = "🟢 LOW"
         
         enriched_vuln['priority_label'] = priority
         
@@ -594,11 +613,13 @@ EXAMPLE ROW (use this exact format):
 <td style="padding: 12px;"><a href="https://nvd.nist.gov/vuln/detail/CVE-2025-61808" target="_blank" style="color: #667eea; font-weight: 600;">CVE-2025-61808</a></td>
 <td style="padding: 12px;">Adobe ColdFusion RCE</td>
 <td style="padding: 12px; text-align: center; color: #dc2626; font-weight: 600;">9.0</td>
-<td style="padding: 12px; text-align: center;">5.4%</td>
+<td style="padding: 12px; text-align: center;">N/A</td>
 <td style="padding: 12px; text-align: center;">🔴 URGENT</td>
 <td style="padding: 12px; text-align: center;"><span style="background: #10b981; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">ZDI</span></td>
 <td style="padding: 12px; text-align: center;">2026-02-06</td>
 </tr>
+
+Note: ZDI advisories show estimated CVSS scores and N/A for EPSS (too new for official scores)
 
 - CVSS colors: 9.0-10.0=#dc2626, 7.0-8.9=#ea580c, 4.0-6.9=#f59e0b
 - Priority: 🔴 URGENT, 🟠 HIGH, 🟡 MEDIUM, 🟢 LOW
@@ -610,6 +631,8 @@ IMPORTANT NOTES:
   1. ZDI (GREEN badge) = Earliest disclosures, often published BEFORE CVE assignment
   2. NVD (BLUE badge) = Newly disclosed CVEs (last 7-30 days), CVSS >= 7.0
   3. CISA KEV (RED badge) = Confirmed active exploitation in the wild
+- ZDI CVSS scores are estimated based on vulnerability type (RCE=9.0, SQLi=8.5, etc.) as official scores aren't available yet
+- ZDI EPSS scores will be "N/A" as these vulnerabilities are too new to be in EPSS database
 - "Zero-day" queries prioritize ZDI + NVD (earliest sources)
 - "Latest/Recent" queries show all 3 sources, sorted by date (newest first)
 - Always emphasize ZDI advisories as the EARLIEST warning available
