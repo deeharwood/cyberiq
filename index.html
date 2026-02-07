@@ -52,12 +52,16 @@
     
     <div class="stats-container">
         <div class="stat-badge">
-            <div class="stat-number" id="stat-kevs">1,499</div>
-            <div class="stat-label">CISA KEVs</div>
+            <div class="stat-number" id="stat-zdi">Loading...</div>
+            <div class="stat-label">ZDI Advisories</div>
         </div>
         <div class="stat-badge">
             <div class="stat-number" id="stat-nvd">Loading...</div>
             <div class="stat-label">Recent NVD CVEs</div>
+        </div>
+        <div class="stat-badge">
+            <div class="stat-number" id="stat-kevs">1,499</div>
+            <div class="stat-label">CISA KEVs</div>
         </div>
         <div class="stat-badge">
             <div class="stat-number" id="stat-total">Loading...</div>
@@ -67,7 +71,7 @@
     
     <div class="main-card" id="main-card">
         <h1 class="welcome-title">Welcome to CyberIQ</h1>
-        <p class="welcome-description">Powered by CISA KEVs (confirmed exploited) and NVD Recent CVEs (newly disclosed). Ask about zero-days, emerging threats, or active exploits.</p>
+        <p class="welcome-description">Triple-source intelligence: ZDI (earliest disclosures), NVD (newly published), and CISA KEVs (confirmed exploited). Get the earliest warning possible.</p>
         <div class="try-label">Try these:</div>
         <div class="suggestions">
             <button class="suggestion-btn" onclick="fillQuery('Latest zero-day vulnerabilities')">Latest Zero-Days</button>
@@ -94,6 +98,15 @@
                 <button class="generate-btn" id="generate-btn" onclick="openQueryTab()">🔍 Generate SIEM Queries</button>
             </div>
         </div>
+        
+        <div class="try-label" style="margin: 20px 0 15px 0; text-align: center;">Try these queries:</div>
+        <div class="suggestions" style="margin-bottom: 30px;">
+            <button class="suggestion-btn" onclick="fillQuery('Latest zero-day vulnerabilities'); search2()">Latest Zero-Days</button>
+            <button class="suggestion-btn" onclick="fillQuery('Recent high-severity CVEs'); search2()">Recent CVEs</button>
+            <button class="suggestion-btn" onclick="fillQuery('Top 5 KEVs by CVSS'); search2()">Top KEVs</button>
+            <button class="suggestion-btn" onclick="fillQuery('Ransomware KEVs'); search2()">Ransomware</button>
+        </div>
+        
         <div class="results-content" id="results-content"></div>
         
         <div class="input-container" style="margin-top: 40px;">
@@ -112,8 +125,9 @@
             const data = await response.json();
             
             if (data.status === 'online') {
-                document.getElementById('stat-kevs').textContent = data.data.cisa_kevs.toLocaleString();
+                document.getElementById('stat-zdi').textContent = data.data.zdi_advisories.toLocaleString();
                 document.getElementById('stat-nvd').textContent = data.data.recent_nvd_cves.toLocaleString();
+                document.getElementById('stat-kevs').textContent = data.data.cisa_kevs.toLocaleString();
                 document.getElementById('stat-total').textContent = data.data.total.toLocaleString();
             }
         } catch (error) {
@@ -127,6 +141,7 @@
     
     function fillQuery(text) {
         document.getElementById('query-input').value = text;
+        document.getElementById('query-input-2').value = text;
     }
     
     async function search() {
