@@ -6,7 +6,7 @@ import os
 import requests
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from bs4 import BeautifulSoup
 
@@ -181,8 +181,8 @@ def fetch_zdi_advisories(days=30):
         
         soup = BeautifulSoup(response.content, 'xml')  # Use XML parser for RSS
         
-        # Calculate cutoff date
-        cutoff_date = datetime.now() - timedelta(days=days)
+        # Calculate cutoff date (timezone-aware for comparison with RSS dates)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         advisories = []
         
@@ -200,9 +200,11 @@ def fetch_zdi_advisories(days=30):
                 # Parse publication date (RSS format: "Mon, 03 Feb 2026 00:00:00 GMT")
                 try:
                     pub_date = datetime.strptime(pub_date_str, '%a, %d %b %Y %H:%M:%S %Z')
+                    # strptime with %Z doesn't make datetime timezone-aware, so add UTC timezone
+                    pub_date = pub_date.replace(tzinfo=timezone.utc)
                 except:
                     try:
-                        # Try alternative format
+                        # Try alternative format with offset (e.g. +0000)
                         pub_date = datetime.strptime(pub_date_str, '%a, %d %b %Y %H:%M:%S %z')
                     except:
                         print(f"Could not parse date: {pub_date_str}")
