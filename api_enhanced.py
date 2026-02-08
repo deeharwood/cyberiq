@@ -217,12 +217,18 @@ def fetch_recent_nvd_cves(days=30):
             # Get published date
             published = cve_data.get('published', '')[:10]  # Just date part
             
+            # Create meaningful vulnerability name from description
+            # Extract first sentence or first 100 chars
+            vuln_name = description[:100] if description else f"{cve_id} - {cvss_severity}"
+            if '.' in vuln_name:
+                vuln_name = vuln_name.split('.')[0] + '.'
+            
             # Format as KEV-like structure for compatibility
             cve_entry = {
                 'cveID': cve_id,
                 'vendorProject': 'Various',
                 'product': 'Various',
-                'vulnerabilityName': f"{cve_id} - {cvss_severity}",
+                'vulnerabilityName': vuln_name,
                 'dateAdded': published,
                 'shortDescription': description[:200] if description else 'No description available',
                 'requiredAction': 'Review and patch as appropriate',
@@ -656,13 +662,20 @@ def optimize_query(query_text):
     needs_nvd = any(word in query_lower for word in ['nvd', 'recent', 'latest', 'new', 'published'])
     needs_zdi = any(word in query_lower for word in ['zdi', 'zero-day', 'zero day', 'zeroday', '0-day', '0day', 'earliest'])
     
-    # If query specifically mentions only KEVs, skip others
-    if 'kev' in query_lower and not needs_nvd and not needs_zdi:
+    # CRITICAL FIX: If query explicitly mentions KEV, prioritize KEV-only
+    # "latest KEVs" means latest from KEV catalog, not latest from all sources
+    if 'kev' in query_lower:
+        # User explicitly asked for KEVs
         needs_nvd = False
         needs_zdi = False
-    
+        needs_kev = True
+    # Similarly for ZDI
+    elif 'zdi' in query_lower or any(word in query_lower for word in ['zero-day', 'zero day', 'zeroday', '0-day', '0day']):
+        needs_kev = False
+        needs_nvd = True  # Keep NVD for zero-days
+        needs_zdi = True
     # If no specific source mentioned, include all
-    if not needs_kev and not needs_nvd and not needs_zdi:
+    elif not needs_kev and not needs_nvd and not needs_zdi:
         needs_kev = True
         needs_nvd = True
         needs_zdi = True
@@ -730,6 +743,33 @@ async def query(request: QueryRequest):
             # Mark all KEVs with source
             for vuln in filtered_kev_data:
                 vuln['source'] = 'CISA KEV'
+            
+            # Time-based filtering for KEV queries
+            import re
+            query_lower = request.query.lower()
+            
+            # Detect time ranges like "past X weeks/days/months"
+            time_match = re.search(r'(past|last|recent)\s+(\d+)\s+(day|days|week|weeks|month|months)', query_lower)
+            if time_match:
+                number = int(time_match.group(2))
+                unit = time_match.group(3)
+                
+                # Calculate cutoff date
+                from datetime import datetime, timedelta
+                if 'day' in unit:
+                    cutoff = datetime.now() - timedelta(days=number)
+                elif 'week' in unit:
+                    cutoff = datetime.now() - timedelta(weeks=number)
+                elif 'month' in unit:
+                    cutoff = datetime.now() - timedelta(days=number*30)
+                
+                cutoff_str = cutoff.strftime('%Y-%m-%d')
+                print(f"⏰ Time filter detected: Showing KEVs added after {cutoff_str}")
+                
+                # Filter by dateAdded
+                filtered_kev_data = [v for v in filtered_kev_data 
+                                   if v.get('dateAdded', '0000-00-00') >= cutoff_str]
+                print(f"After time filter: {len(filtered_kev_data)} KEVs")
             
             # AGGRESSIVE EARLY LIMITING for KEV-only queries
             if not optimization['needs_nvd'] and not optimization['needs_zdi'] and optimization['limit']:
@@ -929,6 +969,10 @@ async def query(request: QueryRequest):
         for item in page_data:
             cve = item.get('cveID', 'N/A')
             vuln = item.get('vulnerabilityName', 'N/A')[:100]
+            # HTML escape to prevent breaking table
+            import html
+            vuln = html.escape(vuln)
+            
             cvss = item.get('cvss_score', 'N/A')
             epss = item.get('epss_score', 'N/A')
             priority = item.get('priority_label', 'N/A')
@@ -941,13 +985,13 @@ async def query(request: QueryRequest):
             source_badge = get_source_badge(source)
             
             table_html += f'''<tr style="border: 1px solid #ddd;">
-<td style="padding: 12px;"><a href="https://nvd.nist.gov/vuln/detail/{cve}" target="_blank" style="color: #667eea; font-weight: 600;">{cve}</a></td>
-<td style="padding: 12px;">{vuln}</td>
-<td style="padding: 12px; text-align: center; color: {cvss_color}; font-weight: 600;">{cvss_display}</td>
-<td style="padding: 12px; text-align: center;">{epss_display}</td>
-<td style="padding: 12px; text-align: center;">{priority}</td>
-<td style="padding: 12px; text-align: center;">{source_badge}</td>
-<td style="padding: 12px; text-align: center;">{date}</td>
+<td style="padding: 12px; border: 1px solid #ddd;"><a href="https://nvd.nist.gov/vuln/detail/{cve}" target="_blank" style="color: #667eea; font-weight: 600;">{cve}</a></td>
+<td style="padding: 12px; border: 1px solid #ddd;">{vuln}</td>
+<td style="padding: 12px; text-align: center; color: {cvss_color}; font-weight: 600; border: 1px solid #ddd;">{cvss_display}</td>
+<td style="padding: 12px; text-align: center; border: 1px solid #ddd;">{epss_display}</td>
+<td style="padding: 12px; text-align: center; border: 1px solid #ddd;">{priority}</td>
+<td style="padding: 12px; text-align: center; border: 1px solid #ddd;">{source_badge}</td>
+<td style="padding: 12px; text-align: center; border: 1px solid #ddd;">{date}</td>
 </tr>
 '''
         
