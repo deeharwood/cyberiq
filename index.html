@@ -47,23 +47,79 @@
         .layout-wrapper { display: flex; max-width: 1400px; margin: 0 auto; gap: 20px; align-items: flex-start; padding: 0 20px; }
         .sidebar { width: 220px; position: sticky; top: 20px; }
         .main-content { flex: 1; min-width: 0; }
-        .vendor-sidebar { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 15px; }
-        .vendor-sidebar h3 { margin: 0 0 12px 0; color: #2d3748; font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-        .vendor-list { display: flex; flex-direction: column; gap: 2px; max-height: 400px; overflow-y: auto; }
-        .vendor-item { width: 100%; text-align: left; padding: 8px 10px; background: #f7fafc; color: #4a5568; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.2s; display: flex; justify-content: space-between; align-items: center; }
-        .vendor-item:hover { background: linear-gradient(135deg, #667eea, #764ba2); color: white; transform: translateX(3px); }
-        .vendor-name { font-weight: 500; flex: 1; }
-        .vendor-count { font-size: 10px; opacity: 0.7; margin-left: 8px; }
-        .vendor-arrow { font-size: 10px; opacity: 0.5; }
         
-        /* Sectors Sidebar */
-        .sectors-sidebar { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-        .sectors-sidebar h3 { margin: 0 0 12px 0; color: #2d3748; font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-        .sectors-list { display: flex; flex-direction: column; gap: 2px; max-height: 400px; overflow-y: auto; }
-        .sector-item { width: 100%; text-align: left; padding: 8px 10px; background: #f7fafc; color: #4a5568; border: none; border-radius: 6px; font-size: 11px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 8px; }
-        .sector-item:hover { background: linear-gradient(135deg, #667eea, #764ba2); color: white; transform: translateX(3px); }
-        .sector-emoji { font-size: 14px; }
-        .sector-name { font-weight: 500; line-height: 1.3; }
+        /* Collapsible Sidebar Sections */
+        .sidebar-section { background: white; border-radius: 12px; padding: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 12px; overflow: hidden; }
+        .sidebar-header { 
+            padding: 14px 16px; 
+            cursor: pointer; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            user-select: none;
+            transition: all 0.2s;
+        }
+        .sidebar-header:hover { background: linear-gradient(135deg, #764ba2, #667eea); }
+        .sidebar-header h3 { 
+            margin: 0; 
+            font-size: 13px; 
+            font-weight: 600; 
+            text-transform: uppercase; 
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .sidebar-arrow { 
+            font-size: 12px; 
+            transition: transform 0.3s ease;
+            opacity: 0.8;
+        }
+        .sidebar-arrow.open { transform: rotate(180deg); }
+        
+        .sidebar-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+        .sidebar-content.open { 
+            max-height: 400px; 
+            overflow-y: auto;
+        }
+        .sidebar-list { 
+            display: flex; 
+            flex-direction: column; 
+            gap: 2px; 
+            padding: 12px;
+        }
+        
+        /* Vendor & Sector Items */
+        .sidebar-item { 
+            width: 100%; 
+            text-align: left; 
+            padding: 8px 10px; 
+            background: #f7fafc; 
+            color: #4a5568; 
+            border: none; 
+            border-radius: 6px; 
+            font-size: 12px; 
+            cursor: pointer; 
+            transition: all 0.2s; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+        }
+        .sidebar-item:hover { 
+            background: linear-gradient(135deg, #667eea, #764ba2); 
+            color: white; 
+            transform: translateX(3px); 
+        }
+        .item-name { font-weight: 500; flex: 1; }
+        .item-count { font-size: 10px; opacity: 0.7; margin-left: 8px; }
+        .item-arrow { font-size: 10px; opacity: 0.5; }
+        .item-emoji { font-size: 14px; margin-right: 8px; }
         
         /* Pagination */
         .pagination { display: flex; justify-content: center; align-items: center; gap: 10px; margin: 30px 0; }
@@ -228,82 +284,94 @@
     
     <!-- Layout Wrapper with Sidebar -->
     <div class="layout-wrapper">
-        <!-- Left Sidebar with Vendors & Sectors -->
+        <!-- Left Sidebar with Collapsible Vendors & Sectors -->
         <aside class="sidebar">
-            <div class="vendor-sidebar">
-                <h3>🏢 Vendors</h3>
-                <div id="vendor-list" class="vendor-list">
-                    <div style="color: #718096; font-size: 12px; padding: 8px;">Loading...</div>
+            <!-- Vendors Section -->
+            <div class="sidebar-section">
+                <div class="sidebar-header" onclick="toggleSection('vendors')">
+                    <h3><span>🏢</span> Vendors</h3>
+                    <span class="sidebar-arrow" id="vendors-arrow">▼</span>
+                </div>
+                <div class="sidebar-content open" id="vendors-content">
+                    <div id="vendor-list" class="sidebar-list">
+                        <div style="color: #718096; font-size: 12px; padding: 8px;">Loading...</div>
+                    </div>
                 </div>
             </div>
             
-            <div class="sectors-sidebar">
-                <h3>🏭 Sectors</h3>
-                <div class="sectors-list">
-                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Chemical sector')">
-                        <span class="sector-emoji">🧪</span>
-                        <span class="sector-name">Chemical</span>
-                    </button>
-                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Commercial Facilities')">
-                        <span class="sector-emoji">🏬</span>
-                        <span class="sector-name">Commercial Facilities</span>
-                    </button>
-                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Communications sector')">
-                        <span class="sector-emoji">📡</span>
-                        <span class="sector-name">Communications</span>
-                    </button>
-                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Critical Manufacturing')">
-                        <span class="sector-emoji">🏭</span>
-                        <span class="sector-name">Critical Manufacturing</span>
-                    </button>
-                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Dams sector')">
-                        <span class="sector-emoji">🌊</span>
-                        <span class="sector-name">Dams</span>
-                    </button>
-                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Defense Industrial Base')">
-                        <span class="sector-emoji">🛡️</span>
-                        <span class="sector-name">Defense Industrial Base</span>
-                    </button>
-                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Emergency Services')">
-                        <span class="sector-emoji">🚨</span>
-                        <span class="sector-name">Emergency Services</span>
-                    </button>
-                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Energy sector')">
-                        <span class="sector-emoji">⚡</span>
-                        <span class="sector-name">Energy</span>
-                    </button>
-                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Financial Services')">
-                        <span class="sector-emoji">💰</span>
-                        <span class="sector-name">Financial Services</span>
-                    </button>
-                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Food and Agriculture')">
-                        <span class="sector-emoji">🌾</span>
-                        <span class="sector-name">Food & Agriculture</span>
-                    </button>
-                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Government Services')">
-                        <span class="sector-emoji">🏛️</span>
-                        <span class="sector-name">Government Services</span>
-                    </button>
-                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Healthcare')">
-                        <span class="sector-emoji">🏥</span>
-                        <span class="sector-name">Healthcare & Public Health</span>
-                    </button>
-                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Information Technology')">
-                        <span class="sector-emoji">💻</span>
-                        <span class="sector-name">Information Technology</span>
-                    </button>
-                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Nuclear sector')">
-                        <span class="sector-emoji">☢️</span>
-                        <span class="sector-name">Nuclear Reactors & Waste</span>
-                    </button>
-                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Transportation')">
-                        <span class="sector-emoji">🚂</span>
-                        <span class="sector-name">Transportation Systems</span>
-                    </button>
-                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Water and Wastewater')">
-                        <span class="sector-emoji">💧</span>
-                        <span class="sector-name">Water & Wastewater</span>
-                    </button>
+            <!-- Sectors Section -->
+            <div class="sidebar-section">
+                <div class="sidebar-header" onclick="toggleSection('sectors')">
+                    <h3><span>🏭</span> Sectors</h3>
+                    <span class="sidebar-arrow" id="sectors-arrow">▼</span>
+                </div>
+                <div class="sidebar-content" id="sectors-content">
+                    <div class="sidebar-list">
+                        <button class="sidebar-item" onclick="fillQuery('vulnerabilities affecting Chemical sector')">
+                            <span class="item-emoji">🧪</span>
+                            <span class="item-name">Chemical</span>
+                        </button>
+                        <button class="sidebar-item" onclick="fillQuery('vulnerabilities affecting Commercial Facilities')">
+                            <span class="item-emoji">🏬</span>
+                            <span class="item-name">Commercial Facilities</span>
+                        </button>
+                        <button class="sidebar-item" onclick="fillQuery('vulnerabilities affecting Communications sector')">
+                            <span class="item-emoji">📡</span>
+                            <span class="item-name">Communications</span>
+                        </button>
+                        <button class="sidebar-item" onclick="fillQuery('vulnerabilities affecting Critical Manufacturing')">
+                            <span class="item-emoji">🏭</span>
+                            <span class="item-name">Critical Manufacturing</span>
+                        </button>
+                        <button class="sidebar-item" onclick="fillQuery('vulnerabilities affecting Dams sector')">
+                            <span class="item-emoji">🌊</span>
+                            <span class="item-name">Dams</span>
+                        </button>
+                        <button class="sidebar-item" onclick="fillQuery('vulnerabilities affecting Defense Industrial Base')">
+                            <span class="item-emoji">🛡️</span>
+                            <span class="item-name">Defense Industrial Base</span>
+                        </button>
+                        <button class="sidebar-item" onclick="fillQuery('vulnerabilities affecting Emergency Services')">
+                            <span class="item-emoji">🚨</span>
+                            <span class="item-name">Emergency Services</span>
+                        </button>
+                        <button class="sidebar-item" onclick="fillQuery('vulnerabilities affecting Energy sector')">
+                            <span class="item-emoji">⚡</span>
+                            <span class="item-name">Energy</span>
+                        </button>
+                        <button class="sidebar-item" onclick="fillQuery('vulnerabilities affecting Financial Services')">
+                            <span class="item-emoji">💰</span>
+                            <span class="item-name">Financial Services</span>
+                        </button>
+                        <button class="sidebar-item" onclick="fillQuery('vulnerabilities affecting Food and Agriculture')">
+                            <span class="item-emoji">🌾</span>
+                            <span class="item-name">Food & Agriculture</span>
+                        </button>
+                        <button class="sidebar-item" onclick="fillQuery('vulnerabilities affecting Government Services')">
+                            <span class="item-emoji">🏛️</span>
+                            <span class="item-name">Government Services</span>
+                        </button>
+                        <button class="sidebar-item" onclick="fillQuery('vulnerabilities affecting Healthcare')">
+                            <span class="item-emoji">🏥</span>
+                            <span class="item-name">Healthcare & Public Health</span>
+                        </button>
+                        <button class="sidebar-item" onclick="fillQuery('vulnerabilities affecting Information Technology')">
+                            <span class="item-emoji">💻</span>
+                            <span class="item-name">Information Technology</span>
+                        </button>
+                        <button class="sidebar-item" onclick="fillQuery('vulnerabilities affecting Nuclear sector')">
+                            <span class="item-emoji">☢️</span>
+                            <span class="item-name">Nuclear Reactors & Waste</span>
+                        </button>
+                        <button class="sidebar-item" onclick="fillQuery('vulnerabilities affecting Transportation')">
+                            <span class="item-emoji">🚂</span>
+                            <span class="item-name">Transportation Systems</span>
+                        </button>
+                        <button class="sidebar-item" onclick="fillQuery('vulnerabilities affecting Water and Wastewater')">
+                            <span class="item-emoji">💧</span>
+                            <span class="item-name">Water & Wastewater</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </aside>
