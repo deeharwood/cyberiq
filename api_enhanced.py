@@ -647,6 +647,54 @@ def filter_vulnerabilities(kev_data, vendor, date_filter, query_text):
     
     return filtered
 
+def optimize_query(query_text):
+    """Analyze query to determine what data sources and limits to use"""
+    query_lower = query_text.lower()
+    
+    # Detect source requirements
+    needs_kev = any(word in query_lower for word in ['kev', 'exploited', 'cisa', 'ransomware', 'actively'])
+    needs_nvd = any(word in query_lower for word in ['nvd', 'recent', 'latest', 'new', 'published'])
+    needs_zdi = any(word in query_lower for word in ['zdi', 'zero-day', 'zero day', 'zeroday', '0-day', '0day', 'earliest'])
+    
+    # If query specifically mentions only KEVs, skip others
+    if 'kev' in query_lower and not needs_nvd and not needs_zdi:
+        needs_nvd = False
+        needs_zdi = False
+    
+    # If no specific source mentioned, include all
+    if not needs_kev and not needs_nvd and not needs_zdi:
+        needs_kev = True
+        needs_nvd = True
+        needs_zdi = True
+    
+    # Detect result limit
+    limit = None
+    # Look for "top N", "first N", "N vulnerabilities", etc.
+    import re
+    number_match = re.search(r'\b(top|first|last|show|latest)\s+(\d+)\b', query_lower)
+    if not number_match:
+        number_match = re.search(r'\b(\d+)\s+(vulnerabilities|vulns|cves|kevs|items)\b', query_lower)
+    
+    if number_match:
+        try:
+            limit = int(number_match.group(2) if number_match.lastindex >= 2 else number_match.group(1))
+            # Cap at reasonable maximum
+            limit = min(limit, 100)
+        except:
+            pass
+    
+    # If no limit specified but query suggests listing, use default
+    if limit is None:
+        if any(word in query_lower for word in ['top', 'list', 'show me']):
+            limit = 20  # Default reasonable limit
+    
+    return {
+        'needs_kev': needs_kev,
+        'needs_nvd': needs_nvd,
+        'needs_zdi': needs_zdi,
+        'limit': limit
+    }
+
 @app.post("/api/query", response_model=QueryResponse)
 async def query(request: QueryRequest):
     """Process threat intelligence queries with optimized performance"""
@@ -657,18 +705,38 @@ async def query(request: QueryRequest):
         print(f"🔍 Query received: {request.query}")
         print(f"{'='*60}")
         
-        # Fetch KEV data (cached)
-        fetch_start = time.time()
-        kev_data = fetch_kev_data()
-        print(f"⏱️  KEV fetch: {time.time() - fetch_start:.2f}s")
+        # Optimize query to determine what we actually need
+        optimization = optimize_query(request.query)
+        print(f"📊 Query optimization:")
+        print(f"   - Needs KEVs: {optimization['needs_kev']}")
+        print(f"   - Needs NVD: {optimization['needs_nvd']}")
+        print(f"   - Needs ZDI: {optimization['needs_zdi']}")
+        print(f"   - Result limit: {optimization['limit'] or 'No limit'}")
         
-        # Filter vulnerabilities by vendor and date only
-        # Don't filter by query_text - that's the question for Claude!
-        filtered_kev_data = filter_vulnerabilities(kev_data, request.vendor, request.date_filter, "")
+        # Fetch only needed sources
+        filtered_kev_data = []
+        recent_nvd_cves = []
+        zdi_advisories = []
         
-        # Mark all KEVs with source
-        for vuln in filtered_kev_data:
-            vuln['source'] = 'CISA KEV'
+        if optimization['needs_kev']:
+            # Fetch KEV data (cached)
+            fetch_start = time.time()
+            kev_data = fetch_kev_data()
+            print(f"⏱️  KEV fetch: {time.time() - fetch_start:.2f}s")
+            
+            # Filter vulnerabilities by vendor and date only
+            filtered_kev_data = filter_vulnerabilities(kev_data, request.vendor, request.date_filter, "")
+            
+            # Mark all KEVs with source
+            for vuln in filtered_kev_data:
+                vuln['source'] = 'CISA KEV'
+            
+            # AGGRESSIVE EARLY LIMITING for KEV-only queries
+            if not optimization['needs_nvd'] and not optimization['needs_zdi'] and optimization['limit']:
+                # Sort by date (latest first) and take only what we need
+                filtered_kev_data.sort(key=lambda x: x.get('dateAdded', ''), reverse=True)
+                filtered_kev_data = filtered_kev_data[:optimization['limit']]
+                print(f"⚡ EARLY LIMIT: Reduced KEVs to {len(filtered_kev_data)} (user wants top {optimization['limit']})")
         
         # Determine time window for NVD CVEs based on query
         nvd_days = 30  # Default: 30 days
@@ -680,29 +748,31 @@ async def query(request: QueryRequest):
             zdi_days = 14  # Last 14 days for ZDI (often published earlier)
             print(f"Query contains 'latest/zero-day' - using {nvd_days} days for NVD, {zdi_days} days for ZDI")
         
-        # Fetch ZDI advisories (earliest disclosures) - cached
-        fetch_start = time.time()
-        zdi_advisories = fetch_zdi_advisories(days=zdi_days)
-        print(f"⏱️  ZDI fetch: {time.time() - fetch_start:.2f}s")
+        if optimization['needs_zdi']:
+            # Fetch ZDI advisories (earliest disclosures) - cached
+            fetch_start = time.time()
+            zdi_advisories = fetch_zdi_advisories(days=zdi_days)
+            print(f"⏱️  ZDI fetch: {time.time() - fetch_start:.2f}s")
+            
+            # AGGRESSIVE EARLY LIMITING for ZDI-only queries
+            if not optimization['needs_nvd'] and not optimization['needs_kev'] and optimization['limit']:
+                zdi_advisories.sort(key=lambda x: x.get('dateAdded', ''), reverse=True)
+                zdi_advisories = zdi_advisories[:optimization['limit']]
+                print(f"⚡ EARLY LIMIT: Reduced ZDI to {len(zdi_advisories)} (user wants top {optimization['limit']})")
         
-        # Fetch recent NVD CVEs - cached
-        fetch_start = time.time()
-        recent_nvd_cves = fetch_recent_nvd_cves(days=nvd_days)
-        print(f"⏱️  NVD fetch: {time.time() - fetch_start:.2f}s")
+        if optimization['needs_nvd']:
+            # Fetch recent NVD CVEs - cached
+            fetch_start = time.time()
+            recent_nvd_cves = fetch_recent_nvd_cves(days=nvd_days)
+            print(f"⏱️  NVD fetch: {time.time() - fetch_start:.2f}s")
+            
+            # AGGRESSIVE EARLY LIMITING for NVD-only queries
+            if not optimization['needs_zdi'] and not optimization['needs_kev'] and optimization['limit']:
+                recent_nvd_cves.sort(key=lambda x: x.get('dateAdded', ''), reverse=True)
+                recent_nvd_cves = recent_nvd_cves[:optimization['limit']]
+                print(f"⚡ EARLY LIMIT: Reduced NVD to {len(recent_nvd_cves)} (user wants top {optimization['limit']})")
         
-        # Fallback: If zero results and looking for latest, expand to 30 days
-        if len(recent_nvd_cves) == 0 and nvd_days < 30:
-            print(f"No CVEs found in last {nvd_days} days, expanding to 30 days...")
-            recent_nvd_cves = fetch_recent_nvd_cves(days=30)
-            nvd_days = 30
-        
-        if len(zdi_advisories) == 0 and zdi_days < 30:
-            print(f"No ZDI advisories found in last {zdi_days} days, expanding to 30 days...")
-            zdi_advisories = fetch_zdi_advisories(days=30)
-            zdi_days = 30
-        
-        print(f"Found {len(zdi_advisories)} ZDI advisories from last {zdi_days} days")
-        print(f"Found {len(recent_nvd_cves)} NVD Recent CVEs from last {nvd_days} days")
+        print(f"After source-level limiting: {len(zdi_advisories)} ZDI, {len(recent_nvd_cves)} NVD, {len(filtered_kev_data)} KEVs")
         
         # Combine all three sources: ZDI + NVD + KEVs
         filtered_data = zdi_advisories + recent_nvd_cves + filtered_kev_data
@@ -757,17 +827,32 @@ async def query(request: QueryRequest):
         if not filtered_data:
             raise HTTPException(status_code=404, detail="No vulnerabilities found matching your criteria")
         
-        print(f"Returning {len(filtered_data)} total vulnerabilities")
+        print(f"Before limiting: {len(filtered_data)} total vulnerabilities")
         
-        # Get CVEs for enrichment
+        # Sort by CVSS if available (prioritize high scores)
+        # For queries asking for "top" vulnerabilities
+        if any(word in request.query.lower() for word in ['top', 'highest', 'worst', 'critical']):
+            filtered_data.sort(key=lambda x: x.get('cvss_score', 0) if isinstance(x.get('cvss_score'), (int, float)) else 0, reverse=True)
+            print(f"Sorted by CVSS score (highest first)")
+        
+        # Apply result limit BEFORE enrichment to save processing
+        if optimization['limit']:
+            total_before_limit = len(filtered_data)
+            filtered_data = filtered_data[:optimization['limit']]
+            print(f"⚡ Limited to top {optimization['limit']} results (was {total_before_limit})")
+        
+        print(f"After limiting: {len(filtered_data)} vulnerabilities to process")
+        
+        # Get CVEs for enrichment (only for the limited set!)
         cves = [vuln.get('cveID') for vuln in filtered_data]
+        print(f"Enriching only {len(cves)} CVEs (not all {len(filtered_data)} records)")
         
         # Fetch CVSS and EPSS data - cached
         enrich_start = time.time()
         cvss_data = fetch_cvss_data(cves)
         epss_data = fetch_epss_data(cves)
         
-        # Enrich vulnerability data
+        # Enrich vulnerability data (only the limited set)
         enriched_data = enrich_vulnerability_data(filtered_data, cvss_data, epss_data)
         print(f"⏱️  Enrichment: {time.time() - enrich_start:.2f}s")
         
@@ -779,59 +864,31 @@ async def query(request: QueryRequest):
         nvd_count = len([v for v in enriched_data if v.get('source') == 'NVD Recent'])
         zdi_count = len([v for v in enriched_data if v.get('source') == 'ZDI'])
         
-        # Build time window message
-        time_window_msg = f"NVD: last {nvd_days} days, ZDI: last {zdi_days} days"
+        # Calculate pagination
+        total_count = len(enriched_data)
+        total_pages = (total_count + request.per_page - 1) // request.per_page
+        start_idx = (request.page - 1) * request.per_page
+        end_idx = min(request.page * request.per_page, total_count)
+        page_data = enriched_data[start_idx:end_idx]
         
-        # Create a diverse sample showing all sources
-        sample_data = []
-        zdi_items = [v for v in enriched_data if v.get('source') == 'ZDI']
-        nvd_items = [v for v in enriched_data if v.get('source') == 'NVD Recent']
-        kev_items = [v for v in enriched_data if v.get('source') == 'CISA KEV']
-        
-        # Take proportional samples from each source (up to 20 total)
-        if zdi_count > 0:
-            sample_data.extend(zdi_items[:8])  # Show up to 8 ZDI
-        if nvd_count > 0:
-            sample_data.extend(nvd_items[:8])  # Show up to 8 NVD
-        if kev_count > 0:
-            sample_data.extend(kev_items[:4])  # Show up to 4 KEVs
-        
-        # If we have less than 20, take more from the largest source
-        if len(sample_data) < 20:
-            remaining = 20 - len(sample_data)
-            if len(enriched_data) > len(sample_data):
-                for item in enriched_data:
-                    if item not in sample_data:
-                        sample_data.append(item)
-                        remaining -= 1
-                        if remaining == 0:
-                            break
+        print(f"📄 Pagination: Page {request.page}/{total_pages}, showing {len(page_data)} items")
         
         context = f"""
-Analyze these {len(enriched_data)} vulnerabilities for: "{request.query}"
+Analyze these {total_count} vulnerabilities for: "{request.query}"
 
-Data includes THREE intelligence sources:
-- {zdi_count} ZDI Advisories (Zero Day Initiative - earliest disclosures, often pre-CVE)
-- {nvd_count} NVD Recent CVEs (newly disclosed in last {nvd_days} days, CVSS >= 7.0)
-- {kev_count} CISA KEVs (confirmed actively exploited in the wild)
-
-Time windows: {time_window_msg}
+Sources breakdown:
+- {zdi_count} ZDI Advisories (Zero Day Initiative - earliest disclosures)
+- {nvd_count} NVD Recent CVEs (newly published, CVSS >= 7.0)
+- {kev_count} CISA KEVs (confirmed actively exploited)
 
 # Pagination
-Page {request.page} of {(len(enriched_data) + request.per_page - 1) // request.per_page}
-Showing items {(request.page - 1) * request.per_page + 1} to {min(request.page * request.per_page, len(enriched_data))} of {len(enriched_data)} total
+Page {request.page} of {total_pages}
+Showing items {start_idx + 1} to {end_idx} of {total_count} total
 
-Sample Data for context (showing diverse mix): {json.dumps(sample_data[:10], indent=2)}
+Page Data to display (SHOW EXACTLY THESE {len(page_data)} items):
+{json.dumps(page_data, indent=2)}
 
-Page Data to display (SHOW EXACTLY THESE {min(request.per_page, len(enriched_data) - (request.page - 1) * request.per_page)} items):
-{json.dumps(enriched_data[(request.page - 1) * request.per_page : request.page * request.per_page], indent=2)}
-
-CRITICAL INSTRUCTIONS:
-- Display EXACTLY the vulnerabilities from "Page Data to display" above
-- Show ALL items in the page data (up to {request.per_page} items)
-- Do NOT skip any items from the page data
-- Use GREEN badges for ZDI, BLUE badges for NVD, RED badges for CISA KEV
-- Keep the table format exactly as specified
+CRITICAL: Display EXACTLY the {len(page_data)} vulnerabilities from "Page Data to display"
 
 OUTPUT FORMAT:
 
@@ -893,14 +950,16 @@ IMPORTANT NOTES:
 - Always show the Source column so users understand the intelligence timeline
 """
         
-        # Call Claude with sufficient tokens for 10-15 results
+        # Call Claude - adjusted tokens based on data size
         claude_start = time.time()
+        # Dynamic max_tokens based on result count (100 tokens per row + 500 overhead)
+        estimated_tokens = min(500 + (len(page_data) * 100), 2000)
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
-            max_tokens=2500,  # Increased to fit 10-15 table rows
+            max_tokens=estimated_tokens,
             messages=[{"role": "user", "content": context}]
         )
-        print(f"⏱️  Claude API: {time.time() - claude_start:.2f}s")
+        print(f"⏱️  Claude API: {time.time() - claude_start:.2f}s (used {estimated_tokens} max_tokens)")
         
         response_text = response.content[0].text
         
