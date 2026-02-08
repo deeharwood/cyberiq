@@ -19,6 +19,20 @@ app = FastAPI()
 client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
 # ========================================
+# ROUTING: Landing Page & Demo
+# ========================================
+
+@app.get("/")
+async def read_root():
+    """Serve landing page at cyberiq.co/"""
+    return FileResponse("landing-page.html")
+
+@app.get("/demo")
+async def read_demo():
+    """Serve demo app at cyberiq.co/demo"""
+    return FileResponse("index.html")
+
+# ========================================
 # V2.0 LLM-POWERED QUERY PARSING
 # ========================================
 
