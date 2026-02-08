@@ -887,26 +887,31 @@ async def query(request: QueryRequest):
                 'date': item.get('dateAdded', 'N/A')
             })
         
-        print(f"📦 Sending {len(lean_data)} lean records to Claude (stripped unnecessary fields)")
+        print(f"📦 Generating table HTML directly (skipping Claude for formatting)")
         
-        context = f"""
-Generate a table showing EXACTLY ALL {len(lean_data)} vulnerabilities below.
-
-Query: "{request.query}"
-Page {request.page} of {total_pages} | Showing {start_idx + 1}-{end_idx} of {total_count} total
-
-DATA TO DISPLAY ({len(lean_data)} items - SHOW ALL OF THEM):
-{json.dumps(lean_data, indent=2)}
-
-CRITICAL INSTRUCTIONS:
-1. Display EVERY SINGLE vulnerability from the data above
-2. Show ALL {len(lean_data)} rows - DO NOT skip any
-3. If data has 10 items, table MUST have 10 rows
-4. If data has 4 items, table MUST have 4 rows
-5. Count your rows before finishing - they must match {len(lean_data)}
-
-TABLE FORMAT:
-<table style="width:100%; border-collapse: collapse; margin: 20px 0; border: 1px solid #ddd;">
+        # Generate table HTML directly - MUCH faster than asking Claude
+        def get_source_badge(source):
+            if source == 'ZDI':
+                return '<span style="background: #10b981; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">ZDI</span>'
+            elif source == 'NVD Recent':
+                return '<span style="background: #3b82f6; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">NVD Recent</span>'
+            else:  # CISA KEV
+                return '<span style="background: #dc2626; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">CISA KEV</span>'
+        
+        def get_cvss_color(cvss):
+            try:
+                score = float(cvss)
+                if score >= 9.0:
+                    return '#dc2626'  # Red
+                elif score >= 7.0:
+                    return '#ea580c'  # Orange
+                else:
+                    return '#f59e0b'  # Yellow
+            except:
+                return '#6b7280'  # Gray for N/A
+        
+        # Build table HTML
+        table_html = '''<table style="width:100%; border-collapse: collapse; margin: 20px 0; border: 1px solid #ddd;">
 <thead>
 <tr style="background: linear-gradient(135deg, #667eea, #764ba2); color: white;">
 <th style="padding: 12px; text-align: left; border: 1px solid #ddd;">CVE ID</th>
@@ -919,37 +924,53 @@ TABLE FORMAT:
 </tr>
 </thead>
 <tbody>
-[MUST HAVE EXACTLY {len(lean_data)} ROWS HERE - ONE FOR EACH ITEM IN DATA]
-</tbody>
-</table>
-
-SOURCE BADGES (use exact format):
-- ZDI: <span style="background: #10b981; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">ZDI</span>
-- NVD Recent: <span style="background: #3b82f6; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">NVD Recent</span>
-- CISA KEV: <span style="background: #dc2626; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">CISA KEV</span>
-
-ROW FORMAT:
-<tr style="border: 1px solid #ddd;">
-<td style="padding: 12px;"><a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXX" target="_blank" style="color: #667eea; font-weight: 600;">CVE-XXXX-XXXX</a></td>
-<td style="padding: 12px;">Vulnerability Name</td>
-<td style="padding: 12px; text-align: center; color: #dc2626; font-weight: 600;">9.8</td>
-<td style="padding: 12px; text-align: center;">45.2%</td>
-<td style="padding: 12px; text-align: center;">🔴 URGENT</td>
-<td style="padding: 12px; text-align: center;">[SOURCE BADGE]</td>
-<td style="padding: 12px; text-align: center;">2026-02-08</td>
+'''
+        
+        for item in page_data:
+            cve = item.get('cveID', 'N/A')
+            vuln = item.get('vulnerabilityName', 'N/A')[:100]
+            cvss = item.get('cvss_score', 'N/A')
+            epss = item.get('epss_score', 'N/A')
+            priority = item.get('priority_label', 'N/A')
+            source = item.get('source', 'N/A')
+            date = item.get('dateAdded', 'N/A')
+            
+            cvss_color = get_cvss_color(cvss)
+            cvss_display = cvss if cvss != 'N/A' else 'N/A'
+            epss_display = f"{epss}%" if epss != 'N/A' and epss != 0 else 'N/A'
+            source_badge = get_source_badge(source)
+            
+            table_html += f'''<tr style="border: 1px solid #ddd;">
+<td style="padding: 12px;"><a href="https://nvd.nist.gov/vuln/detail/{cve}" target="_blank" style="color: #667eea; font-weight: 600;">{cve}</a></td>
+<td style="padding: 12px;">{vuln}</td>
+<td style="padding: 12px; text-align: center; color: {cvss_color}; font-weight: 600;">{cvss_display}</td>
+<td style="padding: 12px; text-align: center;">{epss_display}</td>
+<td style="padding: 12px; text-align: center;">{priority}</td>
+<td style="padding: 12px; text-align: center;">{source_badge}</td>
+<td style="padding: 12px; text-align: center;">{date}</td>
 </tr>
+'''
+        
+        table_html += '''</tbody>
+</table>'''
+        
+        # Now ask Claude for brief analysis only (MUCH smaller context, MUCH faster)
+        context = f"""Provide a brief 2-3 sentence analysis for this query: "{request.query}"
 
-REMEMBER: Your table MUST have {len(lean_data)} rows. Count them!
+Results: {total_count} total ({zdi_count} ZDI, {nvd_count} NVD, {kev_count} KEV)
+Showing page {request.page} of {total_pages}
+
+Just give a brief analysis - the table is already generated.
 """
         
-        # Call Claude - use minimal tokens for faster response
+        
+        # Call Claude - TINY context now, just for analysis
         claude_start = time.time()
-        # Reduce tokens significantly - simple table generation
-        estimated_tokens = min(300 + (len(page_data) * 80), 1200)
+        estimated_tokens = 200  # Very small - just brief analysis
         
         # Log context size for monitoring
         context_chars = len(context)
-        context_tokens_estimate = context_chars // 4  # Rough estimate: 1 token ≈ 4 chars
+        context_tokens_estimate = context_chars // 4
         print(f"📝 Context: {context_chars} chars (~{context_tokens_estimate} tokens), Max response: {estimated_tokens} tokens")
         
         response = client.messages.create(
@@ -959,19 +980,12 @@ REMEMBER: Your table MUST have {len(lean_data)} rows. Count them!
         )
         print(f"⏱️  Claude API: {time.time() - claude_start:.2f}s (used {estimated_tokens} max_tokens)")
         
-        response_text = response.content[0].text
+        analysis_text = response.content[0].text.strip()
         
-        # AGGRESSIVE: Remove ALL newlines if there's a table
-        if '<table' in response_text:
-            # Remove ALL newlines, tabs, extra spaces
-            response_text = re.sub(r'\n+', '', response_text)
-        else:
-            # For non-table responses, keep them
-            response_text = response_text.strip()
+        # Combine table + analysis
+        response_text = table_html + "\n\n" + analysis_text
         
-        # Calculate pagination metadata
-        total_count = len(enriched_data)
-        total_pages = (total_count + request.per_page - 1) // request.per_page
+        # Calculate pagination metadata (already calculated above)
         
         # Log total query time
         total_time = time.time() - query_start
