@@ -19,6 +19,106 @@ app = FastAPI()
 client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
 # ========================================
+# V2.0 LLM-POWERED QUERY PARSING
+# ========================================
+
+def parse_query_with_claude(query_text: str) -> dict:
+    """
+    Use Claude Opus to parse natural language queries into structured filters.
+    This is the v2.0 LLM-powered query understanding layer.
+    """
+    try:
+        parse_start = time.time()
+        
+        prompt = f"""Parse this cybersecurity threat intelligence query into structured filters.
+
+Query: "{query_text}"
+
+Extract and return ONLY valid JSON (no markdown, no explanation):
+
+{{
+  "data_sources": ["KEV"|"NVD"|"ZDI"],
+  "search_keywords": ["keyword1", "keyword2"],
+  "filters": {{
+    "year": "2025" or null,
+    "vendor": "microsoft" or null,
+    "limit": 50 or null
+  }},
+  "sort_by": "date"|"cvss"|null
+}}
+
+Guidelines:
+- For APT/threat actor queries: include keywords like ["APT", "advanced persistent threat", "state-sponsored", "nation-state", "threat actor", "cyber espionage"]
+- For ransomware: ["ransomware", "encryption", "extortion", "ransom", "campaign"]
+- For supply chain: ["supply chain", "third-party", "dependency", "software supply"]
+- For specific CVE types: ["RCE", "remote code execution", "SQL injection", "XSS", etc.]
+- Extract vendor names: Microsoft, Adobe, Cisco, etc.
+- Extract years: 2024, 2025, 2026
+- Extract limits: "top 10" = 10, "show me 50" = 50, "all" = null
+- Default data_sources: ["KEV"] if "KEV" mentioned, otherwise ["KEV", "NVD", "ZDI"]
+
+Return ONLY the JSON object, nothing else."""
+
+        response = client.messages.create(
+            model="claude-opus-4-5-20251101",  # Using Opus 4.5 for best quality
+            max_tokens=500,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        
+        parse_time = time.time() - parse_start
+        
+        # Extract JSON from response
+        response_text = response.content[0].text.strip()
+        
+        # Remove markdown code blocks if present
+        if response_text.startswith('```'):
+            response_text = response_text.split('```')[1]
+            if response_text.startswith('json'):
+                response_text = response_text[4:]
+            response_text = response_text.strip()
+        
+        parsed_intent = json.loads(response_text)
+        
+        print(f"🧠 Claude Opus parsed query in {parse_time:.2f}s:")
+        print(f"   - Keywords: {parsed_intent.get('search_keywords', [])[:5]}")
+        print(f"   - Sources: {parsed_intent.get('data_sources', [])}")
+        print(f"   - Filters: {parsed_intent.get('filters', {})}")
+        
+        return parsed_intent
+        
+    except Exception as e:
+        print(f"❌ Query parsing failed: {e}")
+        # Fallback to empty keywords if Claude fails
+        return {
+            "data_sources": ["KEV", "NVD", "ZDI"],
+            "search_keywords": [],
+            "filters": {"year": None, "vendor": None, "limit": None},
+            "sort_by": None
+        }
+
+def smart_keyword_search(vulnerabilities: list, keywords: list) -> list:
+    """
+    Search vulnerability descriptions and names for keywords.
+    This is the v2.0 smart filtering layer.
+    """
+    if not keywords:
+        return vulnerabilities
+    
+    results = []
+    keywords_lower = [k.lower() for k in keywords]
+    
+    for vuln in vulnerabilities:
+        # Combine searchable text
+        searchable = f"{vuln.get('vulnerabilityName', '')} {vuln.get('shortDescription', '')}".lower()
+        
+        # Check if ANY keyword matches
+        if any(keyword in searchable for keyword in keywords_lower):
+            results.append(vuln)
+    
+    print(f"🔍 Keyword search: {len(results)} matches from {len(vulnerabilities)} total")
+    return results
+
+# ========================================
 # CACHING LAYER (In-Memory with TTL)
 # ========================================
 
@@ -724,12 +824,21 @@ def optimize_query(query_text):
         sort_by_date = True
         print(f"📅 User requested date sorting")
     
+    # Detect year filtering
+    year_filter = None
+    import re
+    year_match = re.search(r'\b(20\d{2})\b', query_lower)  # Matches 2024, 2025, 2026, etc.
+    if year_match:
+        year_filter = year_match.group(1)
+        print(f"📅 Detected year filter: {year_filter}")
+    
     return {
         'needs_kev': needs_kev,
         'needs_nvd': needs_nvd,
         'needs_zdi': needs_zdi,
         'limit': limit,
-        'sort_by_date': sort_by_date
+        'sort_by_date': sort_by_date,
+        'year_filter': year_filter
     }
 
 @app.post("/api/query", response_model=QueryResponse)
@@ -742,21 +851,25 @@ async def query(request: QueryRequest):
         print(f"🔍 Query received: {request.query}")
         print(f"{'='*60}")
         
-        # Optimize query to determine what we actually need
-        optimization = optimize_query(request.query)
-        print(f"📊 Query optimization:")
-        print(f"   - Needs KEVs: {optimization['needs_kev']}")
-        print(f"   - Needs NVD: {optimization['needs_nvd']}")
-        print(f"   - Needs ZDI: {optimization['needs_zdi']}")
-        print(f"   - Result limit: {optimization['limit'] or 'No limit (showing ALL)'}")
-        print(f"   - Sort by date: {optimization.get('sort_by_date', False)}")
+        # V2.0: Use Claude Opus to parse query (LLM-powered!)
+        parsed_intent = parse_query_with_claude(request.query)
+        
+        # Extract parsed information
+        needs_kev = "KEV" in parsed_intent.get('data_sources', [])
+        needs_nvd = "NVD" in parsed_intent.get('data_sources', [])
+        needs_zdi = "ZDI" in parsed_intent.get('data_sources', [])
+        search_keywords = parsed_intent.get('search_keywords', [])
+        limit = parsed_intent.get('filters', {}).get('limit')
+        year_filter = parsed_intent.get('filters', {}).get('year')
+        vendor_filter = parsed_intent.get('filters', {}).get('vendor')
+        sort_by = parsed_intent.get('sort_by')
         
         # Fetch only needed sources
         filtered_kev_data = []
         recent_nvd_cves = []
         zdi_advisories = []
         
-        if optimization['needs_kev']:
+        if needs_kev:
             # Fetch KEV data (cached)
             fetch_start = time.time()
             kev_data = fetch_kev_data()
@@ -797,11 +910,11 @@ async def query(request: QueryRequest):
                 print(f"After time filter: {len(filtered_kev_data)} KEVs")
             
             # AGGRESSIVE EARLY LIMITING for KEV-only queries
-            if not optimization['needs_nvd'] and not optimization['needs_zdi'] and optimization['limit']:
+            if not needs_nvd and not needs_zdi and limit:
                 # Sort by date (latest first) and take only what we need
                 filtered_kev_data.sort(key=lambda x: x.get('dateAdded', ''), reverse=True)
-                filtered_kev_data = filtered_kev_data[:optimization['limit']]
-                print(f"⚡ EARLY LIMIT: Reduced KEVs to {len(filtered_kev_data)} (user wants top {optimization['limit']})")
+                filtered_kev_data = filtered_kev_data[:limit]
+                print(f"⚡ EARLY LIMIT: Reduced KEVs to {len(filtered_kev_data)} (user wants top {limit})")
         
         # Determine time window for NVD CVEs based on query
         nvd_days = 30  # Default: 30 days
@@ -813,29 +926,29 @@ async def query(request: QueryRequest):
             zdi_days = 14  # Last 14 days for ZDI (often published earlier)
             print(f"Query contains 'latest/zero-day' - using {nvd_days} days for NVD, {zdi_days} days for ZDI")
         
-        if optimization['needs_zdi']:
+        if needs_zdi:
             # Fetch ZDI advisories (earliest disclosures) - cached
             fetch_start = time.time()
             zdi_advisories = fetch_zdi_advisories(days=zdi_days)
             print(f"⏱️  ZDI fetch: {time.time() - fetch_start:.2f}s")
             
             # AGGRESSIVE EARLY LIMITING for ZDI-only queries
-            if not optimization['needs_nvd'] and not optimization['needs_kev'] and optimization['limit']:
+            if not needs_nvd and not needs_kev and limit:
                 zdi_advisories.sort(key=lambda x: x.get('dateAdded', ''), reverse=True)
-                zdi_advisories = zdi_advisories[:optimization['limit']]
-                print(f"⚡ EARLY LIMIT: Reduced ZDI to {len(zdi_advisories)} (user wants top {optimization['limit']})")
+                zdi_advisories = zdi_advisories[:limit]
+                print(f"⚡ EARLY LIMIT: Reduced ZDI to {len(zdi_advisories)} (user wants top {limit})")
         
-        if optimization['needs_nvd']:
+        if needs_nvd:
             # Fetch recent NVD CVEs - cached
             fetch_start = time.time()
             recent_nvd_cves = fetch_recent_nvd_cves(days=nvd_days)
             print(f"⏱️  NVD fetch: {time.time() - fetch_start:.2f}s")
             
             # AGGRESSIVE EARLY LIMITING for NVD-only queries
-            if not optimization['needs_zdi'] and not optimization['needs_kev'] and optimization['limit']:
+            if not needs_zdi and not needs_kev and limit:
                 recent_nvd_cves.sort(key=lambda x: x.get('dateAdded', ''), reverse=True)
-                recent_nvd_cves = recent_nvd_cves[:optimization['limit']]
-                print(f"⚡ EARLY LIMIT: Reduced NVD to {len(recent_nvd_cves)} (user wants top {optimization['limit']})")
+                recent_nvd_cves = recent_nvd_cves[:limit]
+                print(f"⚡ EARLY LIMIT: Reduced NVD to {len(recent_nvd_cves)} (user wants top {limit})")
         
         print(f"After source-level limiting: {len(zdi_advisories)} ZDI, {len(recent_nvd_cves)} NVD, {len(filtered_kev_data)} KEVs")
         
@@ -844,21 +957,24 @@ async def query(request: QueryRequest):
         
         print(f"Total: {len(zdi_advisories)} ZDI + {len(recent_nvd_cves)} NVD + {len(filtered_kev_data)} KEVs = {len(filtered_data)} vulnerabilities")
         
-        # Extract and apply smart filters from query
-        vendor_filter, type_filter = extract_filters_from_query(request.query)
+        # V2.0: Apply keyword search if Claude extracted keywords
+        if search_keywords:
+            print(f"🔍 Applying keyword search: {search_keywords[:3]}{'...' if len(search_keywords) > 3 else ''}")
+            filtered_data = smart_keyword_search(filtered_data, search_keywords)
         
+        # Apply vendor filter if Claude extracted one
         if vendor_filter:
-            print(f"Applying vendor filter: {vendor_filter}")
+            print(f"📊 Applying vendor filter: {vendor_filter}")
             filtered_data = [v for v in filtered_data 
-                           if vendor_filter in extract_vendor_from_cve(v).lower()]
+                           if vendor_filter.lower() in extract_vendor_from_cve(v).lower()]
             print(f"After vendor filter: {len(filtered_data)} vulnerabilities")
         
-        if type_filter:
-            print(f"Applying vulnerability type filter: {type_filter}")
-            filtered_data = [v for v in filtered_data
-                           if any(type_filter in vt.lower() 
-                                for vt in classify_vulnerability_type(v))]
-            print(f"After type filter: {len(filtered_data)} vulnerabilities")
+        # Apply year filter if Claude extracted one
+        if year_filter:
+            print(f"📅 Applying year filter: {year_filter}")
+            filtered_data = [v for v in filtered_data 
+                           if v.get('dateAdded', '').startswith(year_filter)]
+            print(f"After year filter: {len(filtered_data)} vulnerabilities from {year_filter}")
         
         # Special handling for ransomware queries
         if 'ransomware' in request.query.lower():
@@ -894,21 +1010,21 @@ async def query(request: QueryRequest):
         
         print(f"Before limiting: {len(filtered_data)} total vulnerabilities")
         
-        # Apply sorting based on user request
-        if optimization.get('sort_by_date', False):
+        # Apply sorting based on Claude's parsed intent
+        if sort_by == 'date':
             # User explicitly requested date sorting
             filtered_data.sort(key=lambda x: x.get('dateAdded', ''), reverse=True)
-            print(f"📅 Sorted by date (newest first) - user requested")
-        elif any(word in request.query.lower() for word in ['top', 'highest', 'worst', 'critical']):
+            print(f"📅 Sorted by date (newest first) - Claude detected sort preference")
+        elif sort_by == 'cvss' or any(word in request.query.lower() for word in ['top', 'highest', 'worst', 'critical']):
             # Sort by CVSS for "top" queries
             filtered_data.sort(key=lambda x: x.get('cvss_score', 0) if isinstance(x.get('cvss_score'), (int, float)) else 0, reverse=True)
-            print(f"Sorted by CVSS score (highest first)")
+            print(f"📊 Sorted by CVSS score (highest first)")
         
         # Apply result limit BEFORE enrichment to save processing
-        if optimization['limit'] is not None:
+        if limit is not None:
             total_before_limit = len(filtered_data)
-            filtered_data = filtered_data[:optimization['limit']]
-            print(f"⚡ Limited to {optimization['limit']} results (was {total_before_limit})")
+            filtered_data = filtered_data[:limit]
+            print(f"⚡ Limited to {limit} results (was {total_before_limit})")
         else:
             print(f"✨ NO LIMIT - showing all {len(filtered_data)} results as requested")
         
