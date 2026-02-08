@@ -873,27 +873,39 @@ async def query(request: QueryRequest):
         
         print(f"📄 Pagination: Page {request.page}/{total_pages}, showing {len(page_data)} items")
         
+        # Create LEAN data with only fields needed for table display
+        # This drastically reduces context size and speeds up Claude API
+        lean_data = []
+        for item in page_data:
+            lean_data.append({
+                'cveID': item.get('cveID', 'N/A'),
+                'vulnerability': item.get('vulnerabilityName', 'N/A'),
+                'cvss': item.get('cvss_score', 'N/A'),
+                'epss': item.get('epss_score', 'N/A'),
+                'priority': item.get('priority_label', 'N/A'),
+                'source': item.get('source', 'N/A'),
+                'date': item.get('dateAdded', 'N/A')
+            })
+        
+        print(f"📦 Sending {len(lean_data)} lean records to Claude (stripped unnecessary fields)")
+        
         context = f"""
-Analyze these {total_count} vulnerabilities for: "{request.query}"
+Generate a table showing EXACTLY ALL {len(lean_data)} vulnerabilities below.
 
-Sources breakdown:
-- {zdi_count} ZDI Advisories (Zero Day Initiative - earliest disclosures)
-- {nvd_count} NVD Recent CVEs (newly published, CVSS >= 7.0)
-- {kev_count} CISA KEVs (confirmed actively exploited)
+Query: "{request.query}"
+Page {request.page} of {total_pages} | Showing {start_idx + 1}-{end_idx} of {total_count} total
 
-# Pagination
-Page {request.page} of {total_pages}
-Showing items {start_idx + 1} to {end_idx} of {total_count} total
+DATA TO DISPLAY ({len(lean_data)} items - SHOW ALL OF THEM):
+{json.dumps(lean_data, indent=2)}
 
-Page Data to display (SHOW EXACTLY THESE {len(page_data)} items):
-{json.dumps(page_data, indent=2)}
+CRITICAL INSTRUCTIONS:
+1. Display EVERY SINGLE vulnerability from the data above
+2. Show ALL {len(lean_data)} rows - DO NOT skip any
+3. If data has 10 items, table MUST have 10 rows
+4. If data has 4 items, table MUST have 4 rows
+5. Count your rows before finishing - they must match {len(lean_data)}
 
-CRITICAL: Display EXACTLY the {len(page_data)} vulnerabilities from "Page Data to display"
-
-OUTPUT FORMAT:
-
-Generate a table with the EXACT vulnerabilities from "Page Data to display" ({min(request.per_page, len(enriched_data) - (request.page - 1) * request.per_page)} rows):
-
+TABLE FORMAT:
 <table style="width:100%; border-collapse: collapse; margin: 20px 0; border: 1px solid #ddd;">
 <thead>
 <tr style="background: linear-gradient(135deg, #667eea, #764ba2); color: white;">
@@ -907,53 +919,39 @@ Generate a table with the EXACT vulnerabilities from "Page Data to display" ({mi
 </tr>
 </thead>
 <tbody>
-[10-15 rows with proper source badges - show ZDI results first!]
+[MUST HAVE EXACTLY {len(lean_data)} ROWS HERE - ONE FOR EACH ITEM IN DATA]
 </tbody>
 </table>
-Brief analysis (2-3 sentences) directly after table.
 
-RULES:
-- CVE links: <a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX" target="_blank" style="color: #667eea; font-weight: 600;">CVE-XXXX</a>
-- Source badges (IMPORTANT - Always include the Source column with HTML badges!): 
-  * ZDI (Zero Day Initiative - earliest disclosures): <span style="background: #10b981; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">ZDI</span>
-  * NVD Recent (newly disclosed): <span style="background: #2563eb; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">NVD</span>
-  * CISA KEV (confirmed exploited): <span style="background: #dc2626; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">CISA KEV</span>
+SOURCE BADGES (use exact format):
+- ZDI: <span style="background: #10b981; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">ZDI</span>
+- NVD Recent: <span style="background: #3b82f6; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">NVD Recent</span>
+- CISA KEV: <span style="background: #dc2626; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">CISA KEV</span>
 
-EXAMPLE ROW (use this exact format):
+ROW FORMAT:
 <tr style="border: 1px solid #ddd;">
-<td style="padding: 12px;"><a href="https://nvd.nist.gov/vuln/detail/CVE-2025-61808" target="_blank" style="color: #667eea; font-weight: 600;">CVE-2025-61808</a></td>
-<td style="padding: 12px;">Adobe ColdFusion RCE</td>
-<td style="padding: 12px; text-align: center; color: #dc2626; font-weight: 600;">9.0</td>
-<td style="padding: 12px; text-align: center;">N/A</td>
+<td style="padding: 12px;"><a href="https://nvd.nist.gov/vuln/detail/CVE-XXXX-XXXX" target="_blank" style="color: #667eea; font-weight: 600;">CVE-XXXX-XXXX</a></td>
+<td style="padding: 12px;">Vulnerability Name</td>
+<td style="padding: 12px; text-align: center; color: #dc2626; font-weight: 600;">9.8</td>
+<td style="padding: 12px; text-align: center;">45.2%</td>
 <td style="padding: 12px; text-align: center;">🔴 URGENT</td>
-<td style="padding: 12px; text-align: center;"><span style="background: #10b981; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.75em; font-weight: 600;">ZDI</span></td>
-<td style="padding: 12px; text-align: center;">2026-02-06</td>
+<td style="padding: 12px; text-align: center;">[SOURCE BADGE]</td>
+<td style="padding: 12px; text-align: center;">2026-02-08</td>
 </tr>
 
-Note: ZDI advisories show estimated CVSS scores and N/A for EPSS (too new for official scores)
-
-- CVSS colors: 9.0-10.0=#dc2626, 7.0-8.9=#ea580c, 4.0-6.9=#f59e0b
-- Priority: 🔴 URGENT, 🟠 HIGH, 🟡 MEDIUM, 🟢 LOW
-- NO extra blank lines
-- NO SIEM queries
-
-IMPORTANT NOTES:
-- THREE SOURCES with different timing:
-  1. ZDI (GREEN badge) = Earliest disclosures, often published BEFORE CVE assignment
-  2. NVD (BLUE badge) = Newly disclosed CVEs (last 7-30 days), CVSS >= 7.0
-  3. CISA KEV (RED badge) = Confirmed active exploitation in the wild
-- ZDI CVSS scores are estimated based on vulnerability type (RCE=9.0, SQLi=8.5, etc.) as official scores aren't available yet
-- ZDI EPSS scores will be "N/A" as these vulnerabilities are too new to be in EPSS database
-- "Zero-day" queries prioritize ZDI + NVD (earliest sources)
-- "Latest/Recent" queries show all 3 sources, sorted by date (newest first)
-- Always emphasize ZDI advisories as the EARLIEST warning available
-- Always show the Source column so users understand the intelligence timeline
+REMEMBER: Your table MUST have {len(lean_data)} rows. Count them!
 """
         
-        # Call Claude - adjusted tokens based on data size
+        # Call Claude - use minimal tokens for faster response
         claude_start = time.time()
-        # Dynamic max_tokens based on result count (100 tokens per row + 500 overhead)
-        estimated_tokens = min(500 + (len(page_data) * 100), 2000)
+        # Reduce tokens significantly - simple table generation
+        estimated_tokens = min(300 + (len(page_data) * 80), 1200)
+        
+        # Log context size for monitoring
+        context_chars = len(context)
+        context_tokens_estimate = context_chars // 4  # Rough estimate: 1 token ≈ 4 chars
+        print(f"📝 Context: {context_chars} chars (~{context_tokens_estimate} tokens), Max response: {estimated_tokens} tokens")
+        
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=estimated_tokens,
