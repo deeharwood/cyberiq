@@ -45,15 +45,25 @@
         
         /* Sidebar Layout */
         .layout-wrapper { display: flex; max-width: 1400px; margin: 0 auto; gap: 20px; align-items: flex-start; padding: 0 20px; }
-        .sidebar { width: 250px; position: sticky; top: 20px; }
+        .sidebar { width: 220px; position: sticky; top: 20px; }
         .main-content { flex: 1; min-width: 0; }
-        .vendor-sidebar { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-        .vendor-sidebar h3 { margin: 0 0 15px 0; color: #2d3748; font-size: 16px; font-weight: 600; }
-        .vendor-list { display: flex; flex-direction: column; gap: 8px; max-height: 600px; overflow-y: auto; }
-        .vendor-item { width: 100%; text-align: left; padding: 10px 12px; background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; border-radius: 8px; font-size: 13px; cursor: pointer; transition: all 0.3s; display: flex; justify-content: space-between; align-items: center; }
-        .vendor-item:hover { transform: translateX(5px); box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4); }
-        .vendor-name { font-weight: 600; }
-        .vendor-count { background: rgba(255,255,255,0.3); padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+        .vendor-sidebar { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 15px; }
+        .vendor-sidebar h3 { margin: 0 0 12px 0; color: #2d3748; font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .vendor-list { display: flex; flex-direction: column; gap: 2px; max-height: 400px; overflow-y: auto; }
+        .vendor-item { width: 100%; text-align: left; padding: 8px 10px; background: #f7fafc; color: #4a5568; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all 0.2s; display: flex; justify-content: space-between; align-items: center; }
+        .vendor-item:hover { background: linear-gradient(135deg, #667eea, #764ba2); color: white; transform: translateX(3px); }
+        .vendor-name { font-weight: 500; flex: 1; }
+        .vendor-count { font-size: 10px; opacity: 0.7; margin-left: 8px; }
+        .vendor-arrow { font-size: 10px; opacity: 0.5; }
+        
+        /* Sectors Sidebar */
+        .sectors-sidebar { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .sectors-sidebar h3 { margin: 0 0 12px 0; color: #2d3748; font-size: 14px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .sectors-list { display: flex; flex-direction: column; gap: 2px; max-height: 400px; overflow-y: auto; }
+        .sector-item { width: 100%; text-align: left; padding: 8px 10px; background: #f7fafc; color: #4a5568; border: none; border-radius: 6px; font-size: 11px; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 8px; }
+        .sector-item:hover { background: linear-gradient(135deg, #667eea, #764ba2); color: white; transform: translateX(3px); }
+        .sector-emoji { font-size: 14px; }
+        .sector-name { font-weight: 500; line-height: 1.3; }
         
         /* Pagination */
         .pagination { display: flex; justify-content: center; align-items: center; gap: 10px; margin: 30px 0; }
@@ -97,12 +107,15 @@
                 transition: left 0.3s ease;
                 box-shadow: 2px 0 10px rgba(0,0,0,0.2);
                 overflow-y: auto;
+                padding: 20px;
             }
             .sidebar.open { left: 0; }
             .hamburger { display: block; }
             
-            .vendor-sidebar { border-radius: 0; height: 100%; }
-            .vendor-list { max-height: none; }
+            .vendor-sidebar { border-radius: 8px; margin-bottom: 15px; }
+            .vendor-list { max-height: 300px; }
+            .sectors-sidebar { border-radius: 8px; }
+            .sectors-list { max-height: 300px; }
             
             /* Main Content */
             .main-content { width: 100%; }
@@ -155,9 +168,9 @@
         
         /* Tablet Styles */
         @media (max-width: 1024px) and (min-width: 769px) {
-            .sidebar { width: 220px; }
-            .vendor-sidebar { padding: 18px; }
-            .vendor-item { padding: 9px 11px; font-size: 12px; }
+            .sidebar { width: 200px; }
+            .vendor-sidebar, .sectors-sidebar { padding: 14px; }
+            .vendor-item, .sector-item { padding: 7px 9px; font-size: 11px; }
             .main-card { padding: 50px 40px; }
             .results-container { padding: 35px 30px; }
         }
@@ -215,12 +228,82 @@
     
     <!-- Layout Wrapper with Sidebar -->
     <div class="layout-wrapper">
-        <!-- Left Sidebar with Vendors -->
+        <!-- Left Sidebar with Vendors & Sectors -->
         <aside class="sidebar">
             <div class="vendor-sidebar">
-                <h3>🏢 Top Vendors</h3>
+                <h3>🏢 Vendors</h3>
                 <div id="vendor-list" class="vendor-list">
-                    <div style="color: #718096; font-size: 13px; padding: 10px;">Loading...</div>
+                    <div style="color: #718096; font-size: 12px; padding: 8px;">Loading...</div>
+                </div>
+            </div>
+            
+            <div class="sectors-sidebar">
+                <h3>🏭 Sectors</h3>
+                <div class="sectors-list">
+                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Chemical sector')">
+                        <span class="sector-emoji">🧪</span>
+                        <span class="sector-name">Chemical</span>
+                    </button>
+                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Commercial Facilities')">
+                        <span class="sector-emoji">🏬</span>
+                        <span class="sector-name">Commercial Facilities</span>
+                    </button>
+                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Communications sector')">
+                        <span class="sector-emoji">📡</span>
+                        <span class="sector-name">Communications</span>
+                    </button>
+                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Critical Manufacturing')">
+                        <span class="sector-emoji">🏭</span>
+                        <span class="sector-name">Critical Manufacturing</span>
+                    </button>
+                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Dams sector')">
+                        <span class="sector-emoji">🌊</span>
+                        <span class="sector-name">Dams</span>
+                    </button>
+                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Defense Industrial Base')">
+                        <span class="sector-emoji">🛡️</span>
+                        <span class="sector-name">Defense Industrial Base</span>
+                    </button>
+                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Emergency Services')">
+                        <span class="sector-emoji">🚨</span>
+                        <span class="sector-name">Emergency Services</span>
+                    </button>
+                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Energy sector')">
+                        <span class="sector-emoji">⚡</span>
+                        <span class="sector-name">Energy</span>
+                    </button>
+                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Financial Services')">
+                        <span class="sector-emoji">💰</span>
+                        <span class="sector-name">Financial Services</span>
+                    </button>
+                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Food and Agriculture')">
+                        <span class="sector-emoji">🌾</span>
+                        <span class="sector-name">Food & Agriculture</span>
+                    </button>
+                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Government Services')">
+                        <span class="sector-emoji">🏛️</span>
+                        <span class="sector-name">Government Services</span>
+                    </button>
+                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Healthcare')">
+                        <span class="sector-emoji">🏥</span>
+                        <span class="sector-name">Healthcare & Public Health</span>
+                    </button>
+                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Information Technology')">
+                        <span class="sector-emoji">💻</span>
+                        <span class="sector-name">Information Technology</span>
+                    </button>
+                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Nuclear sector')">
+                        <span class="sector-emoji">☢️</span>
+                        <span class="sector-name">Nuclear Reactors & Waste</span>
+                    </button>
+                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Transportation')">
+                        <span class="sector-emoji">🚂</span>
+                        <span class="sector-name">Transportation Systems</span>
+                    </button>
+                    <button class="sector-item" onclick="fillQuery('vulnerabilities affecting Water and Wastewater')">
+                        <span class="sector-emoji">💧</span>
+                        <span class="sector-name">Water & Wastewater</span>
+                    </button>
                 </div>
             </div>
         </aside>
@@ -350,6 +433,7 @@
                     `<button class="vendor-item" onclick="fillQuery('${v.vendor} vulnerabilities')">
                         <span class="vendor-name">${v.vendor}</span>
                         <span class="vendor-count">${v.count}</span>
+                        <span class="vendor-arrow">→</span>
                     </button>`
                 ).join('');
             }
