@@ -976,34 +976,9 @@ async def query(request: QueryRequest):
                            if v.get('dateAdded', '').startswith(year_filter)]
             print(f"After year filter: {len(filtered_data)} vulnerabilities from {year_filter}")
         
-        # Special handling for ransomware queries
-        if 'ransomware' in request.query.lower():
-            print("Filtering for ransomware KEVs...")
-            filtered_data = [vuln for vuln in filtered_data 
-                           if vuln.get('knownRansomwareCampaignUse', '').lower() in ['known', 'yes', 'true', 'y']]
-            print(f"Found {len(filtered_data)} ransomware KEVs")
-            
-            # If still too few, show all KEVs and let Claude filter
-            if len(filtered_data) < 10:
-                print("Too few ransomware KEVs found, letting Claude filter from all KEVs")
-                filtered_data = filtered_kev_data
-        
-        # Special handling for "zero-day" queries - prioritize ZDI + NVD (earliest sources)
-        elif any(word in request.query.lower() for word in ['zero-day', 'zero day', 'zeroday', '0-day', '0day']):
-            print("Zero-day query detected - showing ZDI + NVD Recent (earliest disclosures)...")
-            filtered_data = zdi_advisories + recent_nvd_cves
-            # Sort by date, newest first
-            filtered_data.sort(key=lambda x: x.get('dateAdded', ''), reverse=True)
-            print(f"Found {len(zdi_advisories)} ZDI + {len(recent_nvd_cves)} NVD CVEs")
-        
-        # Special handling for "recent", "latest", "new", "emerging" - prioritize ZDI and NVD
-        elif any(word in request.query.lower() for word in ['recent', 'new', 'latest', 'emerging']):
-            print("Recent/latest query detected - prioritizing ZDI + NVD...")
-            # Show ZDI first, then NVD, then KEVs
-            filtered_data = zdi_advisories + recent_nvd_cves + filtered_kev_data
-            # Sort by date, newest first
-            filtered_data.sort(key=lambda x: x.get('dateAdded', ''), reverse=True)
-            print(f"Returning {len(zdi_advisories)} ZDI + {len(recent_nvd_cves)} NVD + {len(filtered_kev_data)} KEVs, sorted by date")
+        # V2.0: Removed old special handling code
+        # Keyword search already filters for ransomware, zero-days, etc.
+        # No need for special cases anymore!
         
         if not filtered_data:
             raise HTTPException(status_code=404, detail="No vulnerabilities found matching your criteria")
