@@ -680,32 +680,56 @@ def optimize_query(query_text):
         needs_nvd = True
         needs_zdi = True
     
-    # Detect result limit
+    # Detect result limit - RESPECT WHAT USER ASKS FOR!
     limit = None
-    # Look for "top N", "first N", "N vulnerabilities", etc.
-    import re
-    number_match = re.search(r'\b(top|first|last|show|latest)\s+(\d+)\b', query_lower)
-    if not number_match:
-        number_match = re.search(r'\b(\d+)\s+(vulnerabilities|vulns|cves|kevs|items)\b', query_lower)
     
-    if number_match:
-        try:
-            limit = int(number_match.group(2) if number_match.lastindex >= 2 else number_match.group(1))
-            # Cap at reasonable maximum
-            limit = min(limit, 100)
-        except:
-            pass
+    # Check for "all" keyword first - user wants EVERYTHING!
+    if any(word in query_lower for word in [' all ', 'all ', ' all', 'every', 'entire', 'complete']):
+        limit = None  # No limit - show EVERYTHING!
+        print(f"🌟 User requested ALL results - no limit applied")
+    else:
+        # Look for actual numbers in the query
+        import re
+        
+        # Try multiple patterns to catch numbers
+        patterns = [
+            r'\b(top|first|last|show|latest)\s+(\d+)\b',  # "top 80", "show 100"
+            r'\b(\d+)\s+(kevs|vulnerabilities|vulns|cves|items)\b',  # "80 KEVs", "100 vulnerabilities"
+            r'\bshow\s+me\s+(\d+)\b',  # "show me 50"
+            r'\b(\d+)\s+of\b',  # "100 of the"
+        ]
+        
+        for pattern in patterns:
+            number_match = re.search(pattern, query_lower)
+            if number_match:
+                try:
+                    # Extract the number from whichever group has it
+                    for group in number_match.groups():
+                        if group and group.isdigit():
+                            limit = int(group)
+                            print(f"📊 Detected limit: {limit} from pattern: {pattern}")
+                            break
+                    if limit:
+                        break
+                except:
+                    pass
+        
+        # REMOVED: Don't apply default limit if user doesn't specify!
+        # Old broken code was: if limit is None and 'show me' in query: limit = 20
+        # This was causing "show me all KEVs" to show only 20!
     
-    # If no limit specified but query suggests listing, use default
-    if limit is None:
-        if any(word in query_lower for word in ['top', 'list', 'show me']):
-            limit = 20  # Default reasonable limit
+    # Detect sorting preference
+    sort_by_date = False
+    if any(phrase in query_lower for phrase in ['order by date', 'sort by date', 'sorted by date', 'by date', 'chronological']):
+        sort_by_date = True
+        print(f"📅 User requested date sorting")
     
     return {
         'needs_kev': needs_kev,
         'needs_nvd': needs_nvd,
         'needs_zdi': needs_zdi,
-        'limit': limit
+        'limit': limit,
+        'sort_by_date': sort_by_date
     }
 
 @app.post("/api/query", response_model=QueryResponse)
@@ -724,7 +748,8 @@ async def query(request: QueryRequest):
         print(f"   - Needs KEVs: {optimization['needs_kev']}")
         print(f"   - Needs NVD: {optimization['needs_nvd']}")
         print(f"   - Needs ZDI: {optimization['needs_zdi']}")
-        print(f"   - Result limit: {optimization['limit'] or 'No limit'}")
+        print(f"   - Result limit: {optimization['limit'] or 'No limit (showing ALL)'}")
+        print(f"   - Sort by date: {optimization.get('sort_by_date', False)}")
         
         # Fetch only needed sources
         filtered_kev_data = []
@@ -869,17 +894,23 @@ async def query(request: QueryRequest):
         
         print(f"Before limiting: {len(filtered_data)} total vulnerabilities")
         
-        # Sort by CVSS if available (prioritize high scores)
-        # For queries asking for "top" vulnerabilities
-        if any(word in request.query.lower() for word in ['top', 'highest', 'worst', 'critical']):
+        # Apply sorting based on user request
+        if optimization.get('sort_by_date', False):
+            # User explicitly requested date sorting
+            filtered_data.sort(key=lambda x: x.get('dateAdded', ''), reverse=True)
+            print(f"📅 Sorted by date (newest first) - user requested")
+        elif any(word in request.query.lower() for word in ['top', 'highest', 'worst', 'critical']):
+            # Sort by CVSS for "top" queries
             filtered_data.sort(key=lambda x: x.get('cvss_score', 0) if isinstance(x.get('cvss_score'), (int, float)) else 0, reverse=True)
             print(f"Sorted by CVSS score (highest first)")
         
         # Apply result limit BEFORE enrichment to save processing
-        if optimization['limit']:
+        if optimization['limit'] is not None:
             total_before_limit = len(filtered_data)
             filtered_data = filtered_data[:optimization['limit']]
-            print(f"⚡ Limited to top {optimization['limit']} results (was {total_before_limit})")
+            print(f"⚡ Limited to {optimization['limit']} results (was {total_before_limit})")
+        else:
+            print(f"✨ NO LIMIT - showing all {len(filtered_data)} results as requested")
         
         print(f"After limiting: {len(filtered_data)} vulnerabilities to process")
         
