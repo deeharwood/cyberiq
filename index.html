@@ -226,7 +226,7 @@
         @media (max-width: 1024px) and (min-width: 769px) {
             .sidebar { width: 200px; }
             .vendor-sidebar, .sectors-sidebar { padding: 14px; }
-            .vendor-item, .sector-item { padding: 7px 9px; font-size: 11px; }
+            .sidebar-item { padding: 7px 9px; font-size: 11px; }
             .main-card { padding: 50px 40px; }
             .results-container { padding: 35px 30px; }
         }
@@ -503,6 +503,74 @@
     // Load stats on page load
     fetchStats();
     
+    // Map vendor names to emojis
+    function getVendorEmoji(vendor) {
+        const vendorLower = vendor.toLowerCase();
+        
+        // Tech Giants
+        if (vendorLower.includes('microsoft')) return '🪟';
+        if (vendorLower.includes('apple')) return '🍎';
+        if (vendorLower.includes('google') || vendorLower.includes('android')) return '🔍';
+        if (vendorLower.includes('amazon')) return '📦';
+        if (vendorLower.includes('meta') || vendorLower.includes('facebook')) return '👥';
+        
+        // Software/Cloud
+        if (vendorLower.includes('adobe')) return '🎨';
+        if (vendorLower.includes('vmware')) return '☁️';
+        if (vendorLower.includes('oracle')) return '🗄️';
+        if (vendorLower.includes('ibm')) return '💼';
+        if (vendorLower.includes('sap')) return '📊';
+        if (vendorLower.includes('salesforce')) return '☁️';
+        
+        // Networking
+        if (vendorLower.includes('cisco')) return '🌐';
+        if (vendorLower.includes('juniper')) return '🌲';
+        if (vendorLower.includes('palo alto')) return '🛡️';
+        if (vendorLower.includes('fortinet')) return '🔒';
+        if (vendorLower.includes('checkpoint')) return '✅';
+        
+        // Security
+        if (vendorLower.includes('crowdstrike')) return '🦅';
+        if (vendorLower.includes('mcafee')) return '🛡️';
+        if (vendorLower.includes('symantec') || vendorLower.includes('broadcom')) return '🔐';
+        if (vendorLower.includes('trend micro')) return '🔍';
+        
+        // Hardware
+        if (vendorLower.includes('dell')) return '💻';
+        if (vendorLower.includes('hp') || vendorLower.includes('hewlett')) return '🖨️';
+        if (vendorLower.includes('lenovo')) return '💻';
+        if (vendorLower.includes('samsung')) return '📱';
+        if (vendorLower.includes('huawei')) return '📡';
+        if (vendorLower.includes('zte')) return '📡';
+        
+        // Software/Dev
+        if (vendorLower.includes('atlassian')) return '🔷';
+        if (vendorLower.includes('jenkins')) return '⚙️';
+        if (vendorLower.includes('gitlab')) return '🦊';
+        if (vendorLower.includes('github')) return '🐙';
+        if (vendorLower.includes('docker')) return '🐋';
+        if (vendorLower.includes('kubernetes')) return '☸️';
+        if (vendorLower.includes('apache')) return '🪶';
+        if (vendorLower.includes('nginx')) return '🟢';
+        if (vendorLower.includes('redis')) return '🔴';
+        if (vendorLower.includes('mongodb')) return '🍃';
+        if (vendorLower.includes('mysql') || vendorLower.includes('mariadb')) return '🐬';
+        if (vendorLower.includes('postgresql')) return '🐘';
+        
+        // IoT/Industrial
+        if (vendorLower.includes('siemens')) return '⚡';
+        if (vendorLower.includes('schneider')) return '🔌';
+        if (vendorLower.includes('rockwell')) return '🏭';
+        
+        // Telecom
+        if (vendorLower.includes('ericsson')) return '📞';
+        if (vendorLower.includes('nokia')) return '📱';
+        if (vendorLower.includes('qualcomm')) return '📡';
+        
+        // Default for unknown vendors
+        return '🏢';
+    }
+    
     // Fetch and display top vendors
     async function fetchVendorStats() {
         try {
@@ -512,10 +580,10 @@
             const vendorList = document.getElementById('vendor-list');
             if (data.top_vendors && data.top_vendors.length > 0) {
                 vendorList.innerHTML = data.top_vendors.map(v => 
-                    `<button class="vendor-item" onclick="fillQuery('${v.vendor} vulnerabilities')">
-                        <span class="vendor-name">${v.vendor}</span>
-                        <span class="vendor-count">${v.count}</span>
-                        <span class="vendor-arrow">→</span>
+                    `<button class="sidebar-item" onclick="fillQuery('${v.vendor} vulnerabilities')">
+                        <span class="item-emoji">${getVendorEmoji(v.vendor)}</span>
+                        <span class="item-name">${v.vendor}</span>
+                        <span class="item-count">${v.count}</span>
                     </button>`
                 ).join('');
             }
