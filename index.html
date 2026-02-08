@@ -100,7 +100,7 @@
             width: 100%; 
             text-align: left; 
             padding: 8px 10px; 
-            background: #f7fafc; 
+            background: transparent; /* No background! */
             color: #4a5568; 
             border: none; 
             border-radius: 6px; 
@@ -112,13 +112,13 @@
             align-items: center; 
         }
         .sidebar-item:hover { 
-            background: linear-gradient(135deg, #667eea, #764ba2); 
-            color: white; 
+            background: rgba(102, 126, 234, 0.1); /* Subtle hover */
+            color: #667eea; 
             transform: translateX(3px); 
         }
         .item-name { font-weight: 500; flex: 1; }
-        .item-count { font-size: 10px; opacity: 0.7; margin-left: 8px; }
-        .item-arrow { font-size: 10px; opacity: 0.5; }
+        .item-count { font-size: 10px; opacity: 0.6; margin-left: 8px; }
+        .item-arrow { font-size: 10px; opacity: 0.4; }
         .item-emoji { font-size: 14px; margin-right: 8px; }
         
         /* Pagination */
@@ -455,6 +455,20 @@
         const overlay = document.querySelector('.sidebar-overlay');
         sidebar.classList.remove('open');
         overlay.classList.remove('active');
+    }
+    
+    // Toggle collapsible sidebar sections
+    function toggleSection(sectionId) {
+        const content = document.getElementById(`${sectionId}-content`);
+        const arrow = document.getElementById(`${sectionId}-arrow`);
+        
+        if (content.classList.contains('open')) {
+            content.classList.remove('open');
+            arrow.classList.remove('open');
+        } else {
+            content.classList.add('open');
+            arrow.classList.add('open');
+        }
     }
     
     // Close sidebar when clicking a vendor (mobile)
