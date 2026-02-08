@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CyberIQ - AI-Powered Threat Intelligence Platform</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'><defs><linearGradient id='g' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' style='stop-color:%23667eea'/><stop offset='100%25' style='stop-color:%23764ba2'/></linearGradient></defs><path d='M60 10 L95 25 L95 55 Q95 85 60 110 Q25 85 25 55 L25 25 Z' fill='url(%23g)' opacity='0.2' stroke='url(%23g)' stroke-width='3'/><circle cx='45' cy='45' r='5' fill='url(%23g)'/><circle cx='75' cy='45' r='5' fill='url(%23g)'/><circle cx='45' cy='70' r='5' fill='url(%23g)'/><circle cx='75' cy='70' r='5' fill='url(%23g)'/><circle cx='60' cy='57' r='7' fill='url(%23g)'/><line x1='45' y1='45' x2='60' y2='57' stroke='url(%23g)' stroke-width='2'/><line x1='75' y1='45' x2='60' y2='57' stroke='url(%23g)' stroke-width='2'/><line x1='45' y1='70' x2='60' y2='57' stroke='url(%23g)' stroke-width='2'/><line x1='75' y1='70' x2='60' y2='57' stroke='url(%23g)' stroke-width='2'/><circle cx='35' cy='35' r='3' fill='url(%23g)'/><circle cx='85' cy='35' r='3' fill='url(%23g)'/><circle cx='35' cy='80' r='3' fill='url(%23g)'/><circle cx='85' cy='80' r='3' fill='url(%23g)'/></svg>" type="image/svg+xml">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            padding: 60px 20px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .logo svg {
+            width: 80px;
+            height: 80px;
+            filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3));
+        }
+
+        .logo-text {
+            font-size: 56px;
+            font-weight: 800;
+            letter-spacing: -1px;
+        }
+
+        .tagline {
+            font-size: 24px;
+            opacity: 0.95;
+            margin-bottom: 20px;
+            font-weight: 300;
+        }
+
+        .description {
+            font-size: 18px;
+            opacity: 0.9;
+            max-width: 700px;
+            margin: 0 auto 40px;
+            line-height: 1.6;
+        }
+
+        /* CTA Buttons */
+        .cta-container {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 80px;
+        }
+
+        .cta-btn {
+            padding: 18px 40px;
+            font-size: 18px;
+            font-weight: 600;
+            border-radius: 12px;
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .cta-primary {
+            background: white;
+            color: #667eea;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        }
+
+        .cta-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 30px rgba(0,0,0,0.3);
+        }
+
+        .cta-secondary {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255,255,255,0.3);
+        }
+
+        .cta-secondary:hover {
+            background: rgba(255,255,255,0.3);
+            transform: translateY(-3px);
+        }
+
+        /* Features Grid */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 30px;
+            margin-bottom: 80px;
+        }
+
+        .feature-card {
+            background: rgba(255,255,255,0.15);
+            backdrop-filter: blur(10px);
+            padding: 40px;
+            border-radius: 20px;
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: all 0.3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            background: rgba(255,255,255,0.2);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+
+        .feature-icon {
+            font-size: 48px;
+            margin-bottom: 20px;
+            display: block;
+        }
+
+        .feature-title {
+            font-size: 22px;
+            font-weight: 700;
+            margin-bottom: 15px;
+        }
+
+        .feature-description {
+            font-size: 16px;
+            opacity: 0.9;
+            line-height: 1.6;
+        }
+
+        /* Stats Section */
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            flex-wrap: wrap;
+            margin-bottom: 80px;
+            padding: 60px 20px;
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 48px;
+            font-weight: 800;
+            margin-bottom: 10px;
+        }
+
+        .stat-label {
+            font-size: 16px;
+            opacity: 0.9;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 40px 20px;
+            opacity: 0.8;
+            border-top: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .footer-text {
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .logo svg { width: 60px; height: 60px; }
+            .logo-text { font-size: 36px; }
+            .tagline { font-size: 18px; }
+            .description { font-size: 16px; }
+            .cta-btn { padding: 14px 30px; font-size: 16px; }
+            .feature-card { padding: 30px; }
+            .stat-number { font-size: 36px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">
+                <svg width="80" height="80" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.95" />
+                            <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0.85" />
+                        </linearGradient>
+                    </defs>
+                    <!-- Shield outline -->
+                    <path d="M60 10 L95 25 L95 55 Q95 85 60 110 Q25 85 25 55 L25 25 Z" 
+                          fill="rgba(255,255,255,0.1)" stroke="url(#logoGrad)" stroke-width="3"/>
+                    <!-- Brain circuit -->
+                    <circle cx="45" cy="45" r="5" fill="url(#logoGrad)"/>
+                    <circle cx="75" cy="45" r="5" fill="url(#logoGrad)"/>
+                    <circle cx="45" cy="70" r="5" fill="url(#logoGrad)"/>
+                    <circle cx="75" cy="70" r="5" fill="url(#logoGrad)"/>
+                    <circle cx="60" cy="57" r="7" fill="url(#logoGrad)"/>
+                    <!-- Neural connections -->
+                    <line x1="45" y1="45" x2="60" y2="57" stroke="url(#logoGrad)" stroke-width="2"/>
+                    <line x1="75" y1="45" x2="60" y2="57" stroke="url(#logoGrad)" stroke-width="2"/>
+                    <line x1="45" y1="70" x2="60" y2="57" stroke="url(#logoGrad)" stroke-width="2"/>
+                    <line x1="75" y1="70" x2="60" y2="57" stroke="url(#logoGrad)" stroke-width="2"/>
+                    <!-- Data points -->
+                    <circle cx="35" cy="35" r="3" fill="url(#logoGrad)"/>
+                    <circle cx="85" cy="35" r="3" fill="url(#logoGrad)"/>
+                    <circle cx="35" cy="80" r="3" fill="url(#logoGrad)"/>
+                    <circle cx="85" cy="80" r="3" fill="url(#logoGrad)"/>
+                </svg>
+                <span class="logo-text">CyberIQ</span>
+            </div>
+            <div class="tagline">AI-Powered Threat Intelligence Platform</div>
+            <p class="description">
+                Real-time vulnerability intelligence from CISA KEVs, NVD, and ZDI. 
+                Get the earliest warning possible with Claude-powered natural language search.
+            </p>
+            <div class="cta-container">
+                <a href="/demo" class="cta-btn cta-primary">🚀 Launch Demo</a>
+                <a href="#features" class="cta-btn cta-secondary">📖 Learn More</a>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-number">3</div>
+                <div class="stat-label">Data Sources</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">2,400+</div>
+                <div class="stat-label">Vulnerabilities</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">1,507</div>
+                <div class="stat-label">CISA KEVs</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">< 3s</div>
+                <div class="stat-label">Query Speed</div>
+            </div>
+        </div>
+
+        <!-- Features -->
+        <div id="features" class="features">
+            <div class="feature-card">
+                <span class="feature-icon">🧠</span>
+                <h3 class="feature-title">Natural Language Search</h3>
+                <p class="feature-description">
+                    Ask questions in plain English. "Show me ransomware affecting healthcare" or "APT actors targeting critical infrastructure."
+                </p>
+            </div>
+
+            <div class="feature-card">
+                <span class="feature-icon">⚡</span>
+                <h3 class="feature-title">Triple-Source Intelligence</h3>
+                <p class="feature-description">
+                    Combines CISA KEVs (confirmed exploited), NVD CVEs (newly published), and ZDI advisories (earliest disclosures).
+                </p>
+            </div>
+
+            <div class="feature-card">
+                <span class="feature-icon">🎯</span>
+                <h3 class="feature-title">Smart Filtering</h3>
+                <p class="feature-description">
+                    Filter by vendor, sector, CVE type, CVSS score, exploit status, and more. Powered by Claude Opus 4.5.
+                </p>
+            </div>
+
+            <div class="feature-card">
+                <span class="feature-icon">📊</span>
+                <h3 class="feature-title">Risk Scoring</h3>
+                <p class="feature-description">
+                    CVSS + EPSS scores combined. Know which vulnerabilities are most likely to be exploited in the wild.
+                </p>
+            </div>
+
+            <div class="feature-card">
+                <span class="feature-icon">🏭</span>
+                <h3 class="feature-title">Sector Analysis</h3>
+                <p class="feature-description">
+                    16 CISA critical infrastructure sectors. Healthcare, Energy, Finance, Government, and more.
+                </p>
+            </div>
+
+            <div class="feature-card">
+                <span class="feature-icon">📥</span>
+                <h3 class="feature-title">Export & Integrate</h3>
+                <p class="feature-description">
+                    CSV exports, SIEM query generation, API access. Integrates with your existing security stack.
+                </p>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p class="footer-text">© 2026 CyberIQ. Built with Claude AI.</p>
+            <p class="footer-text">Real-time threat intelligence for security professionals.</p>
+        </div>
+    </div>
+</body>
+</html>
