@@ -7,13 +7,62 @@ import requests
 import json
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Dict, Any
 from bs4 import BeautifulSoup
+import asyncio
+import time
+from threading import Lock
 
 app = FastAPI()
 
 # Initialize Anthropic client
 client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+
+# ========================================
+# CACHING LAYER (In-Memory with TTL)
+# ========================================
+
+class SimpleCache:
+    """Simple in-memory cache with TTL"""
+    def __init__(self):
+        self.cache: Dict[str, Dict[str, Any]] = {}
+        self.lock = Lock()
+    
+    def get(self, key: str):
+        """Get cached value if not expired"""
+        with self.lock:
+            if key in self.cache:
+                entry = self.cache[key]
+                if time.time() < entry['expires']:
+                    return entry['value']
+                else:
+                    del self.cache[key]
+        return None
+    
+    def set(self, key: str, value: Any, ttl_seconds: int):
+        """Set cached value with TTL"""
+        with self.lock:
+            self.cache[key] = {
+                'value': value,
+                'expires': time.time() + ttl_seconds
+            }
+    
+    def clear(self):
+        """Clear all cache"""
+        with self.lock:
+            self.cache.clear()
+
+# Global cache instance
+cache = SimpleCache()
+
+# Cache TTLs
+KEV_CACHE_TTL = 300  # 5 minutes
+NVD_CACHE_TTL = 300  # 5 minutes
+ZDI_CACHE_TTL = 300  # 5 minutes
+CVSS_CACHE_TTL = 3600  # 1 hour
+EPSS_CACHE_TTL = 3600  # 1 hour
+
+# ========================================
 
 class QueryRequest(BaseModel):
     vendor: str = ""
@@ -72,19 +121,45 @@ async def get_status():
         }
 
 def fetch_kev_data():
-    """Fetch KEV data from CISA"""
+    """Fetch KEV data from CISA with caching"""
+    cache_key = "kev_data"
+    
+    # Try cache first
+    cached = cache.get(cache_key)
+    if cached is not None:
+        print("✅ KEV data loaded from cache")
+        return cached
+    
+    # Fetch from API
     url = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
     try:
+        print("⏳ Fetching KEV data from CISA...")
+        start = time.time()
         response = requests.get(url, timeout=10)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+        
+        # Cache it
+        cache.set(cache_key, data, KEV_CACHE_TTL)
+        print(f"✅ KEV data fetched and cached ({time.time() - start:.2f}s)")
+        return data
     except Exception as e:
-        print(f"Error fetching KEV data: {str(e)}")
+        print(f"❌ Error fetching KEV data: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch KEV data: {str(e)}")
 
+
 def fetch_recent_nvd_cves(days=30):
-    """Fetch recent CVEs from NVD (last N days) - High/Critical only"""
-    print(f"Fetching recent CVEs from NVD (last {days} days)...")
+    """Fetch recent CVEs from NVD (last N days) - High/Critical only with caching"""
+    cache_key = f"nvd_cves_{days}"
+    
+    # Try cache first
+    cached = cache.get(cache_key)
+    if cached is not None:
+        print(f"✅ NVD CVEs (last {days} days) loaded from cache")
+        return cached
+    
+    print(f"⏳ Fetching recent CVEs from NVD (last {days} days)...")
+    start_time = time.time()
     
     # Calculate date range
     from datetime import timedelta
@@ -162,7 +237,9 @@ def fetch_recent_nvd_cves(days=30):
             
             cves.append(cve_entry)
         
-        print(f"✅ Fetched {len(cves)} recent high-severity CVEs from NVD")
+        # Cache it
+        cache.set(cache_key, cves, NVD_CACHE_TTL)
+        print(f"✅ Fetched {len(cves)} recent high-severity CVEs from NVD ({time.time() - start_time:.2f}s)")
         return cves
         
     except Exception as e:
@@ -170,8 +247,17 @@ def fetch_recent_nvd_cves(days=30):
         return []
 
 def fetch_zdi_advisories(days=30):
-    """Fetch recent Zero Day Initiative advisories from RSS feed"""
-    print(f"Fetching ZDI advisories from RSS feed (last {days} days)...")
+    """Fetch recent Zero Day Initiative advisories from RSS feed with caching"""
+    cache_key = f"zdi_advisories_{days}"
+    
+    # Try cache first
+    cached = cache.get(cache_key)
+    if cached is not None:
+        print(f"✅ ZDI advisories (last {days} days) loaded from cache")
+        return cached
+    
+    print(f"⏳ Fetching ZDI advisories from RSS feed (last {days} days)...")
+    start_time = time.time()
     
     try:
         # ZDI published advisories RSS feed
@@ -277,7 +363,9 @@ def fetch_zdi_advisories(days=30):
                 print(f"Error parsing ZDI RSS item: {str(e)}")
                 continue
         
-        print(f"✅ Fetched {len(advisories)} ZDI advisories from RSS feed")
+        # Cache it
+        cache.set(cache_key, advisories, ZDI_CACHE_TTL)
+        print(f"✅ Fetched {len(advisories)} ZDI advisories from RSS feed ({time.time() - start_time:.2f}s)")
         return advisories
         
     except Exception as e:
@@ -285,10 +373,26 @@ def fetch_zdi_advisories(days=30):
         return []
 
 def fetch_cvss_data(cves):
-    """Fetch CVSS scores from NVD"""
+    """Fetch CVSS scores from NVD with caching"""
     cvss_scores = {}
+    cves_to_fetch = []
     
+    # Check cache first
     for cve in cves[:20]:  # Limit to first 20 CVEs
+        cache_key = f"cvss_{cve}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            cvss_scores[cve] = cached
+        else:
+            cves_to_fetch.append(cve)
+    
+    if cves_to_fetch:
+        print(f"⏳ Fetching CVSS scores for {len(cves_to_fetch)} CVEs...")
+    else:
+        print(f"✅ All CVSS scores loaded from cache")
+    
+    # Fetch uncached CVEs
+    for cve in cves_to_fetch:
         try:
             url = f"https://services.nvd.nist.gov/rest/json/cves/2.0?cveId={cve}"
             response = requests.get(url, timeout=5)
@@ -300,12 +404,18 @@ def fetch_cvss_data(cves):
                     
                     # Try to get CVSS v3 score
                     if 'metrics' in vuln_data:
+                        score = None
                         if 'cvssMetricV31' in vuln_data['metrics']:
-                            cvss_scores[cve] = vuln_data['metrics']['cvssMetricV31'][0]['cvssData']['baseScore']
+                            score = vuln_data['metrics']['cvssMetricV31'][0]['cvssData']['baseScore']
                         elif 'cvssMetricV30' in vuln_data['metrics']:
-                            cvss_scores[cve] = vuln_data['metrics']['cvssMetricV30'][0]['cvssData']['baseScore']
+                            score = vuln_data['metrics']['cvssMetricV30'][0]['cvssData']['baseScore']
                         elif 'cvssMetricV2' in vuln_data['metrics']:
-                            cvss_scores[cve] = vuln_data['metrics']['cvssMetricV2'][0]['cvssData']['baseScore']
+                            score = vuln_data['metrics']['cvssMetricV2'][0]['cvssData']['baseScore']
+                        
+                        if score is not None:
+                            cvss_scores[cve] = score
+                            # Cache it
+                            cache.set(f"cvss_{cve}", score, CVSS_CACHE_TTL)
         except Exception as e:
             print(f"Error fetching CVSS for {cve}: {str(e)}")
             continue
@@ -313,12 +423,28 @@ def fetch_cvss_data(cves):
     return cvss_scores
 
 def fetch_epss_data(cves):
-    """Fetch EPSS scores from FIRST.org"""
+    """Fetch EPSS scores from FIRST.org with caching"""
     epss_scores = {}
+    cves_to_fetch = []
+    
+    # Check cache first
+    for cve in cves[:20]:  # Limit to first 20
+        cache_key = f"epss_{cve}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            epss_scores[cve] = cached
+        else:
+            cves_to_fetch.append(cve)
+    
+    if not cves_to_fetch:
+        print(f"✅ All EPSS scores loaded from cache")
+        return epss_scores
+    
+    print(f"⏳ Fetching EPSS scores for {len(cves_to_fetch)} CVEs...")
     
     try:
         # FIRST.org EPSS API - batch request
-        cve_list = ','.join(cves[:20])
+        cve_list = ','.join(cves_to_fetch)
         url = f"https://api.first.org/data/v1/epss?cve={cve_list}"
         response = requests.get(url, timeout=10)
         
@@ -328,7 +454,10 @@ def fetch_epss_data(cves):
                 for item in data['data']:
                     cve = item['cve']
                     epss = float(item['epss']) * 100  # Convert to percentage
-                    epss_scores[cve] = round(epss, 2)
+                    score = round(epss, 2)
+                    epss_scores[cve] = score
+                    # Cache it
+                    cache.set(f"epss_{cve}", score, EPSS_CACHE_TTL)
     except Exception as e:
         print(f"Error fetching EPSS data: {str(e)}")
     
@@ -520,12 +649,18 @@ def filter_vulnerabilities(kev_data, vendor, date_filter, query_text):
 
 @app.post("/api/query", response_model=QueryResponse)
 async def query(request: QueryRequest):
-    """Process threat intelligence queries"""
+    """Process threat intelligence queries with optimized performance"""
+    query_start = time.time()
+    
     try:
-        print(f"Query received: vendor={request.vendor}, date={request.date_filter}, query={request.query}")
+        print(f"\n{'='*60}")
+        print(f"🔍 Query received: {request.query}")
+        print(f"{'='*60}")
         
-        # Fetch KEV data
+        # Fetch KEV data (cached)
+        fetch_start = time.time()
         kev_data = fetch_kev_data()
+        print(f"⏱️  KEV fetch: {time.time() - fetch_start:.2f}s")
         
         # Filter vulnerabilities by vendor and date only
         # Don't filter by query_text - that's the question for Claude!
@@ -545,11 +680,15 @@ async def query(request: QueryRequest):
             zdi_days = 14  # Last 14 days for ZDI (often published earlier)
             print(f"Query contains 'latest/zero-day' - using {nvd_days} days for NVD, {zdi_days} days for ZDI")
         
-        # Fetch ZDI advisories (earliest disclosures)
+        # Fetch ZDI advisories (earliest disclosures) - cached
+        fetch_start = time.time()
         zdi_advisories = fetch_zdi_advisories(days=zdi_days)
+        print(f"⏱️  ZDI fetch: {time.time() - fetch_start:.2f}s")
         
-        # Fetch recent NVD CVEs
+        # Fetch recent NVD CVEs - cached
+        fetch_start = time.time()
         recent_nvd_cves = fetch_recent_nvd_cves(days=nvd_days)
+        print(f"⏱️  NVD fetch: {time.time() - fetch_start:.2f}s")
         
         # Fallback: If zero results and looking for latest, expand to 30 days
         if len(recent_nvd_cves) == 0 and nvd_days < 30:
@@ -623,15 +762,14 @@ async def query(request: QueryRequest):
         # Get CVEs for enrichment
         cves = [vuln.get('cveID') for vuln in filtered_data]
         
-        # Fetch CVSS and EPSS data
-        print("Fetching CVSS data...")
+        # Fetch CVSS and EPSS data - cached
+        enrich_start = time.time()
         cvss_data = fetch_cvss_data(cves)
-        
-        print("Fetching EPSS data...")
         epss_data = fetch_epss_data(cves)
         
         # Enrich vulnerability data
         enriched_data = enrich_vulnerability_data(filtered_data, cvss_data, epss_data)
+        print(f"⏱️  Enrichment: {time.time() - enrich_start:.2f}s")
         
         # Build context for Claude
         import json
@@ -756,11 +894,13 @@ IMPORTANT NOTES:
 """
         
         # Call Claude with sufficient tokens for 10-15 results
+        claude_start = time.time()
         response = client.messages.create(
             model="claude-sonnet-4-20250514",
             max_tokens=2500,  # Increased to fit 10-15 table rows
             messages=[{"role": "user", "content": context}]
         )
+        print(f"⏱️  Claude API: {time.time() - claude_start:.2f}s")
         
         response_text = response.content[0].text
         
@@ -775,6 +915,12 @@ IMPORTANT NOTES:
         # Calculate pagination metadata
         total_count = len(enriched_data)
         total_pages = (total_count + request.per_page - 1) // request.per_page
+        
+        # Log total query time
+        total_time = time.time() - query_start
+        print(f"{'='*60}")
+        print(f"✅ TOTAL QUERY TIME: {total_time:.2f}s")
+        print(f"{'='*60}\n")
         
         return QueryResponse(
             response=response_text,
@@ -1090,6 +1236,63 @@ async def get_vendor_stats():
     except Exception as e:
         print(f"Error getting vendor stats: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/warm-cache")
+async def warm_cache():
+    """Warm up the cache by pre-fetching all data sources"""
+    try:
+        print("🔥 Warming cache...")
+        start = time.time()
+        
+        # Fetch all data sources to cache them
+        kev_data = fetch_kev_data()
+        zdi_7 = fetch_zdi_advisories(days=7)
+        zdi_14 = fetch_zdi_advisories(days=14)
+        zdi_30 = fetch_zdi_advisories(days=30)
+        nvd_7 = fetch_recent_nvd_cves(days=7)
+        nvd_30 = fetch_recent_nvd_cves(days=30)
+        
+        elapsed = time.time() - start
+        
+        return {
+            "status": "success",
+            "message": "Cache warmed successfully",
+            "time": f"{elapsed:.2f}s",
+            "cached": {
+                "kev": len(kev_data.get('vulnerabilities', [])),
+                "zdi_7d": len(zdi_7),
+                "zdi_14d": len(zdi_14),
+                "zdi_30d": len(zdi_30),
+                "nvd_7d": len(nvd_7),
+                "nvd_30d": len(nvd_30)
+            }
+        }
+    except Exception as e:
+        print(f"Error warming cache: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.on_event("startup")
+async def startup_event():
+    """Warm cache on startup"""
+    print("\n" + "="*60)
+    print("🚀 CyberIQ Starting Up...")
+    print("="*60)
+    
+    # Warm cache in background
+    import threading
+    def warm():
+        try:
+            print("🔥 Pre-warming cache...")
+            fetch_kev_data()
+            fetch_zdi_advisories(days=30)
+            fetch_recent_nvd_cves(days=30)
+            print("✅ Cache pre-warmed successfully!")
+        except Exception as e:
+            print(f"⚠️  Cache warming failed (will warm on first request): {str(e)}")
+    
+    thread = threading.Thread(target=warm)
+    thread.daemon = True
+    thread.start()
 
 if __name__ == "__main__":
     import uvicorn
