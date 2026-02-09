@@ -1085,12 +1085,19 @@ async def query(request: QueryRequest):
             print(f"🔍 Applying keyword search: {search_keywords[:3]}{'...' if len(search_keywords) > 3 else ''}")
             filtered_data = smart_keyword_search(filtered_data, search_keywords)
         
-        # Apply vendor filter if Claude extracted one
-        if vendor_filter:
+        # DON'T apply vendor filter if we already have keyword search results
+        # Keyword search is comprehensive (searches all fields including vendor)
+        # Vendor filter would incorrectly remove results where vendor field != query
+        # Example: "Claude vulnerabilities" finds CVE-2026-25725 but vendor=GitHub
+        # 
+        # Only apply vendor filter if NO keyword search was done
+        if vendor_filter and not search_keywords:
             print(f"📊 Applying vendor filter: {vendor_filter}")
             filtered_data = [v for v in filtered_data 
                            if vendor_filter.lower() in extract_vendor_from_cve(v).lower()]
             print(f"After vendor filter: {len(filtered_data)} vulnerabilities")
+        elif vendor_filter and search_keywords:
+            print(f"📊 Skipping vendor filter (keyword search already found matches)")
         
         # Apply year filter if Claude extracted one
         if year_filter:
@@ -1104,14 +1111,14 @@ async def query(request: QueryRequest):
         # No need for special cases anymore!
         
         if not filtered_data:
-            # Return empty results gracefully instead of 404
-            return {
-                "results": [],
-                "total_count": 0,
-                "page": 1,
-                "total_pages": 0,
-                "analysis": "No vulnerabilities found matching your criteria. Try broadening your search or adjusting filters."
-            }
+            # Return empty results gracefully with proper response format
+            return QueryResponse(
+                response="<p>No vulnerabilities found matching your criteria. Try broadening your search or adjusting filters.</p>",
+                count=0,
+                total_count=0,
+                current_page=1,
+                total_pages=0
+            )
         
         print(f"Before limiting: {len(filtered_data)} total vulnerabilities")
         
