@@ -112,8 +112,17 @@ Return ONLY the JSON object, nothing else."""
 
 def smart_keyword_search(vulnerabilities: list, keywords: list) -> list:
     """
-    Search vulnerability descriptions and names for keywords.
-    This is the v2.0 smart filtering layer.
+    V3.0 Enhanced keyword search - searches ALL fields including:
+    - CVE ID
+    - Vendor and Product
+    - Vulnerability name and descriptions
+    - CNA (CVE Numbering Authority)
+    - All vendors and products lists
+    - CWE classifications
+    
+    This finds CVEs even when keywords appear in unexpected fields.
+    Example: "Claude vulnerabilities" finds CVE-2026-25725 (Claude Code)
+    even though vendor=GitHub.
     """
     if not keywords:
         return vulnerabilities
@@ -122,10 +131,29 @@ def smart_keyword_search(vulnerabilities: list, keywords: list) -> list:
     keywords_lower = [k.lower() for k in keywords]
     
     for vuln in vulnerabilities:
-        # Combine searchable text
-        searchable = f"{vuln.get('vulnerabilityName', '')} {vuln.get('shortDescription', '')}".lower()
+        # Build comprehensive searchable text from ALL available fields
+        search_fields = [
+            vuln.get('cveID', ''),
+            vuln.get('vendorProject', ''),
+            vuln.get('product', ''),
+            vuln.get('vulnerabilityName', ''),
+            vuln.get('shortDescription', ''),
+            vuln.get('full_description', ''),  # Full NVD description
+            vuln.get('cna_name', ''),  # CVE Numbering Authority
+        ]
         
-        # Check if ANY keyword matches
+        # Add list fields if they exist
+        if 'all_vendors' in vuln and isinstance(vuln['all_vendors'], list):
+            search_fields.extend(vuln['all_vendors'])
+        if 'all_products' in vuln and isinstance(vuln['all_products'], list):
+            search_fields.extend(vuln['all_products'])
+        if 'cwes' in vuln and isinstance(vuln['cwes'], list):
+            search_fields.extend(vuln['cwes'])
+        
+        # Combine all fields into single searchable string
+        searchable = ' '.join(str(field) for field in search_fields if field).lower()
+        
+        # Check if ANY keyword matches in ANY field
         if any(keyword in searchable for keyword in keywords_lower):
             results.append(vuln)
     
@@ -263,7 +291,17 @@ def fetch_kev_data():
 
 
 def fetch_recent_nvd_cves(days=30):
-    """Fetch recent CVEs from NVD (last N days) - High/Critical only with caching"""
+    """
+    V3.0 Enhanced NVD CVE fetching with full metadata extraction:
+    - CNA (CVE Numbering Authority)
+    - Vendor/Product from CPE configurations  
+    - Full descriptions
+    - CWE classifications
+    - CVSS vector strings
+    - Multiple vendor/product lists
+    
+    This enables finding CVEs like "Claude vulnerabilities" even when vendor=GitHub
+    """
     cache_key = f"nvd_cves_{days}"
     
     # Try cache first
@@ -291,36 +329,54 @@ def fetch_recent_nvd_cves(days=30):
         response.raise_for_status()
         data = response.json()
         
-        # Extract CVEs
+        # Extract CVEs with full enrichment
         cves = []
         for item in data.get('vulnerabilities', []):
             cve_data = item.get('cve', {})
             cve_id = cve_data.get('id', '')
             
-            # Get CVSS score
+            # === Extract CVSS Information ===
             cvss_score = 0
             cvss_severity = 'UNKNOWN'
+            cvss_vector = ''
+            cna_name = 'Unknown'
+            
             metrics = cve_data.get('metrics', {})
             
-            # Try CVSS v3.1 first, then v3.0, then v2.0
-            if 'cvssMetricV31' in metrics and metrics['cvssMetricV31']:
-                cvss_data = metrics['cvssMetricV31'][0]['cvssData']
-                cvss_score = cvss_data.get('baseScore', 0)
-                cvss_severity = cvss_data.get('baseSeverity', 'UNKNOWN')
+            # Try CVSS 4.0 first (newest)
+            if 'cvssMetricV40' in metrics and metrics['cvssMetricV40']:
+                cvss_40_data = metrics['cvssMetricV40'][0]
+                cvss_score = cvss_40_data['cvssData'].get('baseScore', 0)
+                cvss_severity = cvss_40_data['cvssData'].get('baseSeverity', 'UNKNOWN')
+                cvss_vector = cvss_40_data['cvssData'].get('vectorString', '')
+                cna_name = cvss_40_data.get('source', 'Unknown')
+            # Then CVSS v3.1
+            elif 'cvssMetricV31' in metrics and metrics['cvssMetricV31']:
+                cvss_31_data = metrics['cvssMetricV31'][0]
+                cvss_score = cvss_31_data['cvssData'].get('baseScore', 0)
+                cvss_severity = cvss_31_data['cvssData'].get('baseSeverity', 'UNKNOWN')
+                cvss_vector = cvss_31_data['cvssData'].get('vectorString', '')
+                cna_name = cvss_31_data.get('source', 'Unknown')
+            # Then CVSS v3.0
             elif 'cvssMetricV30' in metrics and metrics['cvssMetricV30']:
-                cvss_data = metrics['cvssMetricV30'][0]['cvssData']
-                cvss_score = cvss_data.get('baseScore', 0)
-                cvss_severity = cvss_data.get('baseSeverity', 'UNKNOWN')
+                cvss_30_data = metrics['cvssMetricV30'][0]
+                cvss_score = cvss_30_data['cvssData'].get('baseScore', 0)
+                cvss_severity = cvss_30_data['cvssData'].get('baseSeverity', 'UNKNOWN')
+                cvss_vector = cvss_30_data['cvssData'].get('vectorString', '')
+                cna_name = cvss_30_data.get('source', 'Unknown')
+            # Finally CVSS v2.0
             elif 'cvssMetricV2' in metrics and metrics['cvssMetricV2']:
-                cvss_data = metrics['cvssMetricV2'][0]['cvssData']
-                cvss_score = cvss_data.get('baseScore', 0)
+                cvss_2_data = metrics['cvssMetricV2'][0]
+                cvss_score = cvss_2_data['cvssData'].get('baseScore', 0)
                 cvss_severity = 'HIGH' if cvss_score >= 7.0 else 'MEDIUM'
+                cvss_vector = cvss_2_data['cvssData'].get('vectorString', '')
+                cna_name = cvss_2_data.get('source', 'Unknown')
             
             # Only include High/Critical (CVSS >= 7.0)
             if cvss_score < 7.0:
                 continue
             
-            # Get description
+            # === Extract Description ===
             descriptions = cve_data.get('descriptions', [])
             description = ''
             for desc in descriptions:
@@ -328,28 +384,81 @@ def fetch_recent_nvd_cves(days=30):
                     description = desc.get('value', '')
                     break
             
-            # Get published date
-            published = cve_data.get('published', '')[:10]  # Just date part
+            # === Extract Vendor/Product from CPE ===
+            vendors = set()
+            products = set()
             
-            # Create meaningful vulnerability name from description
-            # Extract first sentence or first 100 chars
+            configurations = cve_data.get('configurations', [])
+            for config in configurations:
+                nodes = config.get('nodes', [])
+                for node in nodes:
+                    cpe_matches = node.get('cpeMatch', [])
+                    for cpe in cpe_matches:
+                        if cpe.get('vulnerable'):
+                            cpe_string = cpe.get('criteria', '')
+                            # CPE format: cpe:2.3:a:vendor:product:version:...
+                            parts = cpe_string.split(':')
+                            if len(parts) >= 5:
+                                vendor = parts[3]
+                                product = parts[4]
+                                if vendor and vendor != '*':
+                                    vendors.add(vendor)
+                                if product and product != '*':
+                                    products.add(product)
+            
+            # Set primary vendor/product
+            primary_vendor = sorted(vendors)[0] if vendors else 'Various'
+            primary_product = sorted(products)[0] if products else 'Various'
+            
+            # === Extract CWE Classifications ===
+            cwes = []
+            weaknesses = cve_data.get('weaknesses', [])
+            for weakness in weaknesses:
+                weakness_descs = weakness.get('description', [])
+                for desc in weakness_descs:
+                    cwe_id = desc.get('value', '')
+                    if cwe_id and cwe_id.startswith('CWE-'):
+                        cwes.append(cwe_id)
+            cwes = list(set(cwes))  # Remove duplicates
+            
+            # Get published date
+            published = cve_data.get('published', '')[:10]
+            
+            # Create vulnerability name
             vuln_name = description[:100] if description else f"{cve_id} - {cvss_severity}"
             if '.' in vuln_name:
                 vuln_name = vuln_name.split('.')[0] + '.'
             
-            # Format as KEV-like structure for compatibility
+            # === Build Enhanced CVE Entry ===
             cve_entry = {
+                # Basic info
                 'cveID': cve_id,
-                'vendorProject': 'Various',
-                'product': 'Various',
-                'vulnerabilityName': vuln_name,
                 'dateAdded': published,
+                'vulnerabilityName': vuln_name,
                 'shortDescription': description[:200] if description else 'No description available',
+                'full_description': description,  # NEW: Full description for better search
+                
+                # Vendor/Product
+                'vendorProject': primary_vendor,
+                'product': primary_product,
+                'all_vendors': list(vendors),  # NEW: All vendors for search
+                'all_products': list(products),  # NEW: All products for search
+                
+                # CVSS
+                'cvss_score': cvss_score,
+                'cvss_severity': cvss_severity,
+                'cvss_vector': cvss_vector,  # NEW: CVSS vector string
+                
+                # CNA
+                'cna_name': cna_name,  # NEW: CVE Numbering Authority
+                
+                # CWE
+                'cwes': cwes,  # NEW: CWE classifications
+                
+                # Metadata
                 'requiredAction': 'Review and patch as appropriate',
                 'dueDate': '',
                 'knownRansomwareCampaignUse': 'Unknown',
-                'cvss_score': cvss_score,
-                'cvss_severity': cvss_severity,
                 'epss_score': 0,
                 'priority': '🔴 URGENT' if cvss_score >= 9.0 else '🟠 HIGH',
                 'source': 'NVD Recent'
@@ -995,7 +1104,14 @@ async def query(request: QueryRequest):
         # No need for special cases anymore!
         
         if not filtered_data:
-            raise HTTPException(status_code=404, detail="No vulnerabilities found matching your criteria")
+            # Return empty results gracefully instead of 404
+            return {
+                "results": [],
+                "total_count": 0,
+                "page": 1,
+                "total_pages": 0,
+                "analysis": "No vulnerabilities found matching your criteria. Try broadening your search or adjusting filters."
+            }
         
         print(f"Before limiting: {len(filtered_data)} total vulnerabilities")
         
@@ -1200,7 +1316,11 @@ async def generate_queries(request: QueryRequest):
         filtered_data = filter_vulnerabilities(kev_data, request.vendor, request.date_filter, "")
         
         if not filtered_data:
-            raise HTTPException(status_code=404, detail="No vulnerabilities found")
+            # Return helpful message instead of 404
+            return {
+                "siem_queries": "No vulnerabilities found matching your criteria.",
+                "count": 0
+            }
         
         # Get CVEs
         cves = [vuln.get('cveID') for vuln in filtered_data[:10]]
@@ -1261,7 +1381,11 @@ async def generate_single_query(request: dict):
         filtered_data = filter_vulnerabilities(kev_data, '', '', "")
         
         if not filtered_data:
-            raise HTTPException(status_code=404, detail="No vulnerabilities found")
+            # Return helpful message instead of 404
+            return {
+                "query": "No vulnerabilities available to generate query.",
+                "type": query_type
+            }
         
         # Get CVEs
         cves = [vuln.get('cveID') for vuln in filtered_data[:10]]
