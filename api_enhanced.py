@@ -25,12 +25,12 @@ client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 @app.get("/")
 async def read_root():
     """Serve landing page at cyberiq.co/"""
-    return FileResponse("landing-page.html")
+    return FileResponse("index.html")
 
 @app.get("/demo")
 async def read_demo():
     """Serve demo app at cyberiq.co/demo"""
-    return FileResponse("index.html")
+    return FileResponse("demo/index.html")
 
 # ========================================
 # V2.0 LLM-POWERED QUERY PARSING
